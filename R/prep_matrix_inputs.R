@@ -99,6 +99,9 @@ prep_matrix_inputs <- function(trees_df,
                                geo_filter = "Honduras",
                                geo_level = "country") {
 
+  dir.create(paste0('data/gfb3-', out_num), recursive = TRUE, showWarnings = FALSE)
+  dir.create(paste0('outputs/gfb3-', out_num), recursive = TRUE, showWarnings = FALSE)
+
   #### Clean Tree DF and Add TPH REMPER Columns ####
 
   dat <-  trees_df |> drop_na('PA', 'Status',

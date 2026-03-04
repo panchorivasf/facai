@@ -28,7 +28,8 @@
 #' plots_to_keep <- manual_plot_filter(my_plots_sf)
 #' plots_to_keep <- manual_plot_filter(my_plots_sf, "honduras_selection")
 #' }
-manual_plot_filter <- function(sf_object, object_name = "filtered_plots") {
+manual_plot_filter <- function(sf_object,
+                               object_name = "filtered_plots") {
 
   sf_wgs84 <- sf::st_transform(sf_object, crs = 4326)
 
