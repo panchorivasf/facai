@@ -170,7 +170,7 @@ add_covariates <- function(points_df          = NULL,
   # Sort by the trailing numeric suffix immediately before .tif
   trailing_nums <- suppressWarnings(
     as.numeric(regmatches(basename(tif_files),
-                          regexpr("(?<=\\D)(\\d+)(?=\\.tif$)",
+                          regexpr("(?<=bio)(\\d+)",
                                   basename(tif_files), perl = TRUE)))
   )
   tif_files <- tif_files[order(trailing_nums)]
