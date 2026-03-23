@@ -11,8 +11,8 @@
 #' @param points_file Character. Path to a CSV or Parquet file to load if
 #'   \code{points_df} is \code{NULL}. Default: \code{NULL}.
 #' @param cov_raster Character. Path to a directory containing \code{.tif}
-#'   raster files to extract. All \code{.tif} files in the directory are
-#'   loaded; see \code{n_vars} to control how many are used.
+#'   raster files to extract. Files are filtered by \code{file_pattern} and
+#'   sorted by embedded bio number before loading.
 #' @param output_file Character or \code{NULL}. Base path (without extension)
 #'   for output files. Extensions are added automatically depending on
 #'   \code{write_parq} and \code{write_csv}. If \code{NULL}, no file is
@@ -29,21 +29,31 @@
 #'   covariate columns are appended (or used to overwrite existing columns with
 #'   the same names). If \code{FALSE}, only the coordinate columns and the
 #'   extracted covariates are returned.
-#' @param var_prefix Character. Prefix for the names of the extracted covariate
-#'   columns (e.g., \code{"C"} produces \code{C1}, \code{C2}, ...).
+#' @param var_names Character vector or \code{NULL}. Explicit names for the
+#'   extracted covariate columns. If provided, its length must match the number
+#'   of raster files loaded (after applying \code{file_pattern} and
+#'   \code{n_vars}). Overrides \code{var_prefix} when supplied. Useful for
+#'   extracting a single named variable (e.g., \code{var_names = "C21"}) or
+#'   any set of variables with non-sequential names. Default: \code{NULL}.
+#' @param var_prefix Character. Prefix for auto-generated covariate column
+#'   names when \code{var_names} is \code{NULL} (e.g., \code{"C"} produces
+#'   \code{C1}, \code{C2}, ...). Ignored when \code{var_names} is provided.
 #'   Default: \code{"C"}.
-#' @param n_vars Integer or \code{NULL}. Number of raster files to use, taken
-#'   in sorted order. If \code{NULL}, all discovered \code{.tif} files are
-#'   used. Useful when the directory contains exactly 19 BioClim layers and you
-#'   want to enforce that count. Default: \code{NULL}.
+#' @param file_pattern Character. Regular expression used to filter \code{.tif}
+#'   files in \code{cov_raster}. Useful when a folder contains multiple rasters
+#'   and you only want a subset — for example, \code{"et0_v3_yr\\.tif$"} to
+#'   select only the PET raster from a folder that also contains an aridity
+#'   index file. Default: \code{"\\.tif$"} (all \code{.tif} files).
+#' @param n_vars Integer or \code{NULL}. Number of raster files to use after
+#'   filtering by \code{file_pattern}, taken in sorted order. If \code{NULL},
+#'   all files matching \code{file_pattern} are used. Default: \code{NULL}.
 #' @param crs Character. Coordinate reference system of the input points,
 #'   passed to \code{terra::vect()}. Must match the CRS of the raster files.
 #'   Default: \code{"EPSG:4326"} (WGS84 geographic coordinates).
 #' @param drop_na_coords Logical. If \code{TRUE} (default), rows with
-#'   \code{NA} in either coordinate column are silently removed before
-#'   extraction and a warning is issued reporting how many were dropped. If
-#'   \code{FALSE}, the function stops with an error when \code{NA} coordinates
-#'   are found.
+#'   \code{NA} in either coordinate column are removed before extraction and a
+#'   warning is issued. If \code{FALSE}, the function stops with an error when
+#'   \code{NA} coordinates are found.
 #' @param verbose Logical. If \code{TRUE} (default), progress messages and a
 #'   summary of extracted variable ranges are printed to the console.
 #'
@@ -52,40 +62,56 @@
 #'   \code{drop_na_coords = TRUE}.
 #'
 #' @details
-#' Raster files are sorted by the numeric suffix extracted from their base
-#' filename using the pattern \code{"(?<=\\D)(\\d+)(?=\\.tif$)"}, which
-#' targets only the trailing number immediately before the \code{.tif}
-#' extension. This handles common naming conventions such as \code{bio_1.tif},
-#' \code{BIO01.tif}, or \code{chelsa_bio1_2071.tif} correctly.
+#' Raster files are sorted by the bio number embedded in their filename using
+#' the pattern \code{"(?<=bio)(\\d+)"} (case-insensitive). This handles common
+#' naming conventions such as \code{bio_1.tif}, \code{BIO01.tif}, or
+#' \code{CHELSA_bio1_2071.tif}. For rasters without a bio number in the name
+#' (e.g., \code{et0_v3_yr.tif}), use \code{file_pattern} to select a single
+#' file and \code{var_names} to assign its column name explicitly — in this
+#' case sorting is irrelevant.
 #'
 #' Extraction uses \code{terra::extract()} with the default method (nearest
 #' cell, equivalent to \code{method = "simple"} in the older \pkg{raster}
 #' package). No spatial interpolation or downscaling is performed: each point
 #' receives the value of the raster cell whose centre is closest to it.
 #'
-#' When \code{keep_original_cols = TRUE} and the input already contains
-#' columns named \code{var_prefix1}, \code{var_prefix2}, etc., those columns
-#' are overwritten with the newly extracted values. This makes the function
-#' suitable for replacing static climate covariates with future projections
-#' while preserving all other plot attributes.
+#' When \code{keep_original_cols = TRUE} and the input already contains columns
+#' with the same names as the extracted covariates, those columns are
+#' overwritten. This makes the function suitable for replacing static climate
+#' covariates with future projections while preserving all other plot
+#' attributes.
 #'
 #' @examples
 #' \dontrun{
-#' # Minimal usage — plot locations only
+#' # Extract CHELSA BIO1-19 at plot locations
 #' plots <- data.frame(PlotID = 1:5,
-#'                     LON = c(-70, -75, -80, -85, -90),
-#'                     LAT = c(10, 20, 30, 40, 50))
-#' result <- add_covariates(points_df = plots,
-#'                          cov_raster = "path/to/bioclim/tifs/",
-#'                          n_vars = 19)
+#'                     LON    = c(-87, -86, -85, -84, -83),
+#'                     LAT    = c(14,   15,  15,  14,  13))
+#' result <- add_covariates(points_df  = plots,
+#'                          cov_raster = "path/to/chelsa_historic/",
+#'                          n_vars     = 19)
 #'
-#' # Grid usage, writing both Parquet and CSV output
-#' result <- add_covariates(points_file  = "map_grid_3km.csv",
-#'                          cov_raster   = "path/to/future/bioclim/",
-#'                          output_file  = "map_grid_3km_fut",
-#'                          n_vars       = 19,
-#'                          var_prefix   = "C",
-#'                          keep_original_cols = TRUE)
+#' # Extract a single named variable (PET) from a mixed folder
+#' result <- add_covariates(points_df    = plots,
+#'                          cov_raster   = "Z:/data/Global_AI_ET/",
+#'                          file_pattern = "et0_v3_yr\\.tif$",
+#'                          var_names    = "C21")
+#'
+#' # Extract aridity index from the same folder in a separate call
+#' result <- add_covariates(points_df    = result,
+#'                          cov_raster   = "Z:/data/Global_AI_ET/",
+#'                          file_pattern = "ai_v3_yr\\.tif$",
+#'                          var_names    = "C20")
+#'
+#' # Full pipeline: CHELSA future + write outputs
+#' result <- add_covariates(points_file        = "pine_plots.csv",
+#'                          cov_raster         = "path/to/chelsa_ssp126/",
+#'                          output_file        = "pine_plots_ssp126",
+#'                          n_vars             = 19,
+#'                          var_prefix         = "C",
+#'                          keep_original_cols = TRUE,
+#'                          write_parq         = TRUE,
+#'                          write_csv          = FALSE)
 #' }
 #'
 #' @importFrom data.table fread fwrite
@@ -99,7 +125,9 @@ add_covariates <- function(points_df          = NULL,
                            write_csv          = TRUE,
                            coord_cols         = c("LON", "LAT"),
                            keep_original_cols = TRUE,
+                           var_names          = NULL,
                            var_prefix         = "C",
+                           file_pattern       = "\\.tif$",
                            n_vars             = NULL,
                            crs                = "EPSG:4326",
                            drop_na_coords     = TRUE,
@@ -162,33 +190,49 @@ add_covariates <- function(points_df          = NULL,
   if (!dir.exists(cov_raster))
     stop("Raster directory not found: ", cov_raster)
 
-  tif_files <- list.files(cov_raster, pattern = "\\.tif$", full.names = TRUE)
+  tif_files <- list.files(cov_raster, pattern = file_pattern, full.names = TRUE)
 
   if (length(tif_files) == 0)
-    stop("No .tif files found in: ", cov_raster)
+    stop("No files matching pattern '", file_pattern, "' found in: ", cov_raster)
 
-  # Sort by the trailing numeric suffix immediately before .tif
-  trailing_nums <- suppressWarnings(
+  # Sort by embedded bio number (e.g. bio1, BIO01, CHELSA_bio1_2071).
+  # For files without a bio number (e.g. et0_v3_yr.tif), fall back to
+  # alphabetical order — sorting is irrelevant when file_pattern selects
+  # a single file anyway.
+  bio_nums <- suppressWarnings(
     as.numeric(regmatches(basename(tif_files),
-                          regexpr("(?<=bio)(\\d+)",
+                          regexpr("(?i)(?<=bio)(\\d+)",
                                   basename(tif_files), perl = TRUE)))
   )
-  tif_files <- tif_files[order(trailing_nums)]
+  if (all(is.na(bio_nums))) {
+    tif_files <- sort(tif_files)
+  } else {
+    tif_files <- tif_files[order(bio_nums)]
+  }
 
   if (!is.null(n_vars)) {
     if (length(tif_files) < n_vars)
-      stop("Expected ", n_vars, " raster files, found only ", length(tif_files))
+      stop("Expected ", n_vars, " raster file(s), found only ", length(tif_files))
     tif_files <- tif_files[seq_len(n_vars)]
   }
 
-  n_rasters  <- length(tif_files)
-  var_names  <- paste0(var_prefix, seq_len(n_rasters))
+  n_rasters <- length(tif_files)
+
+  # Resolve output column names: var_names takes priority over var_prefix
+  if (!is.null(var_names)) {
+    if (length(var_names) != n_rasters)
+      stop("'var_names' has ", length(var_names), " element(s) but ",
+           n_rasters, " raster file(s) were selected. They must match.")
+    col_names <- var_names
+  } else {
+    col_names <- paste0(var_prefix, seq_len(n_rasters))
+  }
 
   if (verbose)
     message("Loading ", n_rasters, " raster(s) from: ", cov_raster)
 
   cov_stack <- terra::rast(tif_files)
-  names(cov_stack) <- var_names
+  names(cov_stack) <- col_names
 
   # ── 4. Extract raster values at point locations ────────────────────────────
   if (verbose) message("Extracting covariate values...")
@@ -196,12 +240,12 @@ add_covariates <- function(points_df          = NULL,
   pts      <- terra::vect(coords_clean, geom = c("x", "y"), crs = crs)
   ext_vals <- terra::extract(cov_stack, pts)[, -1, drop = FALSE]
   ext_vals <- as.data.frame(ext_vals)
-  names(ext_vals) <- var_names
+  names(ext_vals) <- col_names
 
   # ── 5. Assemble output data frame ──────────────────────────────────────────
   if (keep_original_cols) {
     out <- df_clean
-    out[, var_names] <- ext_vals      # overwrites existing columns if present
+    out[, col_names] <- ext_vals    # overwrites existing columns if present
   } else {
     out <- cbind(df_clean[, coord_cols, drop = FALSE], ext_vals)
   }
@@ -225,7 +269,7 @@ add_covariates <- function(points_df          = NULL,
     message("\nSummary:")
     message("  Output rows    : ", nrow(out))
     message("  Output columns : ", ncol(out))
-    message("  Covariates     : ", var_names[1], " to ", var_names[n_rasters])
+    message("  Covariates     : ", col_names[1], " to ", col_names[n_rasters])
     message("\nCovariate ranges:")
     rng <- t(sapply(ext_vals, function(x)
       c(min  = round(min(x,  na.rm = TRUE), 3),
