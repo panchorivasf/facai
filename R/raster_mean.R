@@ -77,7 +77,7 @@ raster_mean <- function(input_dir,
   rast_stack <- rast(tif_files)
 
   message("Computing pixel-wise mean (na.rm = ", na.rm, ")...")
-  mean_rast <- mean(rast_stack, na.rm = na.rm)
+  mean_rast <- terra::mean(rast_stack, na.rm = na.rm)
 
   # --- Write output ----------------------------------------------------------
   writeRaster(mean_rast, output_file, overwrite = overwrite,

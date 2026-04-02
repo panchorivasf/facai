@@ -20,6 +20,14 @@ Imports:
     leaflet,
     sf,
     dplyr,
-    rnaturalearth
+    rnaturalearth,
+    shiny,
+    bslib,
+    readr,
+    readxl,
+    arrow,
+    writexl,
+    DT,
+    purrr
 Suggests: 
     testthat (>= 3.0.0)
