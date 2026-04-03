@@ -125,12 +125,11 @@ interactive_map <- function(data,
   if (grepl("POINT", geom_type)) {
     map <- map |>
       leaflet::addCircleMarkers(
-        radius      = 6,
+        radius      = 4,
         color       = "red",
-        fillColor   = "red",
         fillOpacity = 0.7,
         stroke      = TRUE,
-        weight      = 2,
+        # weight      = 2,
         popup       = popup_html,
         group       = "Data Points"
       )
