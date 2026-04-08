@@ -70,6 +70,8 @@
 #' @export
 gfb3_converter <- function(launch.browser = TRUE) {
 
+  # options(browser = "google-chrome")
+
   # ── GFB3 schema ─────────────────────────────────────────────────────────────
   GFB3_COLS <- c("PlotID", "Latitude", "Longitude", "PA",
                  "TreeID", "Species", "Status", "DBH", "YR",

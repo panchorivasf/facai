@@ -19,7 +19,6 @@ RoxygenNote: 7.3.3
 Imports: 
     leaflet,
     sf,
-    dplyr,
     rnaturalearth,
     shiny,
     bslib,
@@ -28,6 +27,11 @@ Imports:
     arrow,
     writexl,
     DT,
-    purrr
+    purrr,
+    duckdb, 
+    stringr, 
+    glue, 
+    cli,
+    dplyr
 Suggests: 
     testthat (>= 3.0.0)
