@@ -1,198 +1,246 @@
-#' Add one or more contributors to the InterNodes master contributor table
+#' Add or update contributors in the FACAI contributors mastersheet
 #'
-#' @param x A data frame with contributor data, or a single-row tibble.
-#'   Required columns: `full_name`, `first_name`, `last_name`, `email`,
-#'   `affiliation_1`. Optional: `affiliation_2`, `affiliation_3`.
-#' @param master_path Path to the master contributor Parquet file.
-#' @param region Two-letter region code for ID prefix (e.g. `"af"`, `"sa"`,
-#'   `"as"`). Default `NULL` uses plain `in_ctb_NNNN` with no region infix.
-#' @param dry_run If `TRUE`, returns the rows that *would* be inserted without
-#'   writing anything. Useful for inspection before committing.
+#' @description
+#' Registers one or more contributors into the centralized
+#' \code{contributors_mastersheet.parquet} stored in the data depot. Each
+#' contributor is assigned a unique \code{contributor_id}. A file-based lock
+#' prevents simultaneous writes from multiple sessions.
 #'
-#' @return Invisibly returns the newly inserted rows as a data frame, with
-#'   their assigned `contributor_id` values.
+#' @param entry A data frame (one or more rows) or a named list (single entry).
+#'   Required fields:
+#'   \describe{
+#'     \item{full_name}{Character. Full name of the contributor.}
+#'     \item{first_name}{Character. First name.}
+#'     \item{mid_init}{Character. Middle initial(s). \code{NA} if none.}
+#'     \item{last_names}{Character. Last name(s).}
+#'     \item{email_1}{Character. Primary email address.}
+#'     \item{email_2}{Character. Secondary email address. \code{NA} if none.}
+#'     \item{affiliation_1}{Character. Primary institutional affiliation.}
+#'     \item{affiliation_2}{Character. Secondary affiliation. \code{NA} if none.}
+#'     \item{affiliation_3}{Character. Tertiary affiliation. \code{NA} if none.}
+#'     \item{affiliation_4}{Character. Quaternary affiliation. \code{NA} if none.}
+#'   }
+#' @param depot_path Character. Path to the shared data depot directory
+#'   containing \code{contributors_mastersheet.parquet}.
+#' @param download Logical. If \code{TRUE} (default), copies the updated
+#'   mastersheet to the current working directory as
+#'   \code{contributors_mastersheet_<YYYYMMDD>.parquet}.
+#'
+#' @return Invisibly returns the updated mastersheet as a data frame.
 #'
 #' @details
-#' Duplicate detection is based on `email`. Any incoming row whose email
-#' already exists in the master is skipped with a message. Rows with a
-#' missing or `"?"` email are matched on `full_name` instead, with a warning.
+#' Each contributor is assigned a unique \code{contributor_id} of the form
+#' \code{ctb_<NNNN>}, where \code{<NNNN>} is a zero-padded 4-digit integer
+#' unique within the full mastersheet.
 #'
-#' IDs are assigned by querying `MAX(contributor_id)` from the master via
-#' DuckDB and incrementing from there, so parallel ingestion from different
-#' scripts is safe as long as they do not run truly simultaneously on the same
-#' file.
+#' A \code{.lock} file is created in \code{depot_path} for the duration of the
+#' write operation. If a lock file younger than 5 minutes is found, the function
+#' stops with an informative error. Stale locks (older than 5 minutes) are
+#' removed automatically with a warning.
+#'
+#' If \code{contributors_mastersheet.parquet} does not exist in
+#' \code{depot_path}, a new one is created automatically.
+#'
+#' Legacy column names (\code{middle_init}, \code{last_name}, \code{email})
+#' are silently remapped to the current names for backwards compatibility.
+#'
+#' @importFrom arrow read_parquet write_parquet
+#' @importFrom dplyr bind_rows
+#' @importFrom fs path
 #'
 #' @examples
 #' \dontrun{
-#' # Single contributor
+#' # Single entry as a named list
 #' add_contributors(
-#'   data.frame(
-#'     full_name     = "Jane Doe",
+#'   entry = list(
+#'     full_name     = "Jane A. Doe",
 #'     first_name    = "Jane",
-#'     last_name     = "Doe",
-#'     email         = "jane.doe@uni.edu",
-#'     affiliation_1 = "University of Example, Country"
+#'     mid_init      = "A.",
+#'     last_names    = "Doe",
+#'     email_1       = "jane.doe@university.edu",
+#'     email_2       = NA_character_,
+#'     affiliation_1 = "University of Example",
+#'     affiliation_2 = NA_character_,
+#'     affiliation_3 = NA_character_,
+#'     affiliation_4 = NA_character_
 #'   ),
-#'   master_path = "data/in_master_contributor.parquet",
-#'   region = "af"
+#'   depot_path = "/path/to/depot"
 #' )
 #'
-#' # Batch ingest from a formatted table
-#' add_contributors(
-#'   my_contributors_df,
-#'   master_path = "data/in_master_contributor.parquet",
-#'   region = "af",
-#'   dry_run = TRUE   # inspect first
+#' # Multiple entries as a data frame
+#' entries <- data.frame(
+#'   full_name     = c("Jane A. Doe", "John B. Smith"),
+#'   first_name    = c("Jane", "John"),
+#'   mid_init      = c("A.", "B."),
+#'   last_names    = c("Doe", "Smith"),
+#'   email_1       = c("jane@uni.edu", "john@uni.edu"),
+#'   email_2       = c(NA, NA),
+#'   affiliation_1 = c("University of Example", "Institute of Science"),
+#'   affiliation_2 = c(NA, NA),
+#'   affiliation_3 = c(NA, NA),
+#'   affiliation_4 = c(NA, NA),
+#'   stringsAsFactors = FALSE
 #' )
+#' add_contributors(entries, depot_path = "/path/to/depot")
 #' }
+#'
 #' @export
-add_contributors <- function(x,
-                            master_path = "/in_master_contributor.parquet",
-                            region = NULL,
-                            dry_run = FALSE) {
+add_contributors <- function(entry, depot_path, download = TRUE) {
 
-  stopifnot(is.data.frame(x))
+  # --- 0. Dependencies ------------------------------------------------------
+  required_pkgs <- c("arrow", "dplyr", "fs")
+  invisible(lapply(required_pkgs, function(pkg) {
+    if (!requireNamespace(pkg, quietly = TRUE))
+      stop(sprintf("Package '%s' is required but not installed.", pkg),
+           call. = FALSE)
+  }))
 
-  required_cols <- c("full_name", "first_name", "last_name", "email", "affiliation_1")
-  missing_cols  <- setdiff(required_cols, names(x))
-  if (length(missing_cols) > 0) {
-    cli::cli_abort("Missing required columns: {.field {missing_cols}}")
+  # --- 1. Normalize input to data frame -------------------------------------
+  if (is.list(entry) && !is.data.frame(entry)) {
+    entry <- as.data.frame(entry, stringsAsFactors = FALSE)
   }
+  stopifnot(is.data.frame(entry))
 
-  # Ensure optional affiliation columns exist
-  x <- .ensure_cols(x, c("affiliation_2", "affiliation_3"), fill = NA_character_)
-
-  # Normalise: trim whitespace, standardise missing email sentinel
-  x <- x |>
-    dplyr::mutate(
-      dplyr::across(dplyr::where(is.character), stringr::str_trim),
-      email = dplyr::if_else(email %in% c("", "?", "-", NA_character_),
-                             NA_character_, email)
-    )
-
-  # ---- Load or initialise master ----------------------------------------
-  con <- duckdb::dbConnect(duckdb::duckdb(), dbdir = ":memory:")
-  on.exit(duckdb::dbDisconnect(con, shutdown = TRUE), add = TRUE)
-
-  if (file.exists(master_path)) {
-    master <- duckdb::dbGetQuery(
-      con,
-      glue::glue("SELECT * FROM read_parquet('{master_path}')")
-    )
-  } else {
-    cli::cli_alert_info("Master file not found — creating new master at {.path {master_path}}")
-    master <- .empty_master()
-  }
-
-  # ---- Duplicate detection ----------------------------------------------
-  new_rows   <- list()
-  skipped    <- 0L
-
-  for (i in seq_len(nrow(x))) {
-    row <- x[i, ]
-
-    is_dup <- if (!is.na(row$email)) {
-      # Primary key: email
-      any(!is.na(master$email) & master$email == row$email)
-    } else {
-      # Fallback: full_name match, with warning
-      match_name <- any(master$full_name == row$full_name)
-      if (match_name) {
-        cli::cli_warn(
-          "No email for {.val {row$full_name}} — matched on full_name. Skipping."
-        )
-      }
-      match_name
-    }
-
-    if (is_dup) {
-      cli::cli_alert_warning("Duplicate skipped: {.val {row$full_name}} ({row$email})")
-      skipped <- skipped + 1L
-    } else {
-      new_rows[[length(new_rows) + 1L]] <- row
+  # --- 2. Backwards compatibility: remap legacy column names ----------------
+  col_renames <- c(
+    middle_init = "mid_init",
+    last_name   = "last_names",
+    email       = "email_1"
+  )
+  for (old in names(col_renames)) {
+    new <- col_renames[[old]]
+    if (old %in% names(entry) && !new %in% names(entry)) {
+      names(entry)[names(entry) == old] <- new
     }
   }
 
-  if (length(new_rows) == 0L) {
-    cli::cli_alert_info("No new contributors to add ({skipped} duplicate(s) skipped).")
-    return(invisible(NULL))
+  # --- 3. Fill optional fields if absent ------------------------------------
+  optional_fields <- c(
+    "mid_init", "email_2",
+    "affiliation_2", "affiliation_3", "affiliation_4"
+  )
+  for (f in optional_fields) {
+    if (!f %in% names(entry)) entry[[f]] <- NA_character_
   }
 
-  new_df <- dplyr::bind_rows(new_rows)
+  # --- 4. Validate required fields ------------------------------------------
+  required_fields <- c(
+    "full_name", "first_name", "mid_init", "last_names",
+    "email_1", "email_2",
+    "affiliation_1", "affiliation_2", "affiliation_3", "affiliation_4"
+  )
+  missing_fields <- setdiff(required_fields, names(entry))
+  if (length(missing_fields) > 0) {
+    stop(
+      "Missing required field(s): ",
+      paste(missing_fields, collapse = ", "),
+      call. = FALSE
+    )
+  }
 
-  # ---- Assign IDs -------------------------------------------------------
-  next_n <- .next_id_n(master$contributor_id)
+  # --- 5. Acquire file lock -------------------------------------------------
+  mastersheet_file <- "contributors_mastersheet.parquet"
+  mastersheet_path <- fs::path(depot_path, mastersheet_file)
+  lock_path        <- fs::path(depot_path, paste0(mastersheet_file, ".lock"))
 
-  id_prefix <- if (!is.null(region)) {
-    paste0("in_ctb_", tolower(region), "_")
+  if (file.exists(lock_path)) {
+    lock_age <- as.numeric(
+      difftime(Sys.time(), file.mtime(lock_path), units = "mins")
+    )
+    if (lock_age < 5) {
+      lock_info <- tryCatch(readLines(lock_path), error = function(e) "unknown")
+      stop(
+        "Contributors mastersheet is locked by another process ",
+        "(user: ", lock_info[1], ", since: ", lock_info[2], "). ",
+        "Please wait and try again.",
+        call. = FALSE
+      )
+    } else {
+      warning("Removing stale lock file (> 5 minutes old).", call. = FALSE)
+      file.remove(lock_path)
+    }
+  }
+
+  writeLines(
+    c(Sys.getenv("USER"), as.character(Sys.time())),
+    lock_path
+  )
+  on.exit(
+    if (file.exists(lock_path)) file.remove(lock_path),
+    add = TRUE
+  )
+
+  # --- 6. Load or initialize mastersheet ------------------------------------
+  if (file.exists(mastersheet_path)) {
+    master <- arrow::read_parquet(mastersheet_path)
   } else {
-    "in_ctb_"
-  }
-
-  new_df <- new_df |>
-    dplyr::mutate(
-      contributor_id = sprintf(
-        paste0(id_prefix, "%04d"),
-        seq(next_n, next_n + dplyr::n() - 1L)
-      ),
-      .before = 1
+    message("No existing contributors mastersheet found. Initializing a new one.")
+    master <- data.frame(
+      contributor_id = character(),
+      full_name      = character(),
+      first_name     = character(),
+      mid_init       = character(),
+      last_names     = character(),
+      email_1        = character(),
+      email_2        = character(),
+      affiliation_1  = character(),
+      affiliation_2  = character(),
+      affiliation_3  = character(),
+      affiliation_4  = character(),
+      stringsAsFactors = FALSE
     )
+  }
 
-  # ---- Dry run ----------------------------------------------------------
-  if (dry_run) {
-    cli::cli_alert_info(
-      "dry_run = TRUE: {nrow(new_df)} row(s) would be inserted, \\
-       {skipped} duplicate(s) skipped."
+  # --- 7. Generate unique contributor_id values -----------------------------
+  existing_nums <- if (nrow(master) > 0 && "contributor_id" %in% names(master)) {
+    as.integer(regmatches(
+      master$contributor_id,
+      regexpr("[0-9]{4}$", master$contributor_id)
+    ))
+  } else {
+    integer(0)
+  }
+
+  next_id <- if (length(existing_nums) > 0) max(existing_nums) + 1L else 1L
+
+  entry$contributor_id <- vapply(seq_len(nrow(entry)), function(i) {
+    sprintf("ctb_%04d", next_id + i - 1L)
+  }, character(1))
+
+  if (any(entry$contributor_id %in% master$contributor_id)) {
+    stop(
+      "Duplicate contributor_id detected — please inspect the mastersheet.",
+      call. = FALSE
     )
-    return(invisible(new_df))
   }
 
-  # ---- Write ------------------------------------------------------------
-  updated <- dplyr::bind_rows(master, new_df)
-
-  arrow::write_parquet(updated, master_path)
-
-  cli::cli_alert_success(
-    "Added {nrow(new_df)} contributor(s) to {.path {master_path}} \\
-     ({skipped} duplicate(s) skipped)."
+  # --- 8. Enforce column order and bind -------------------------------------
+  col_order <- c(
+    "contributor_id",
+    "full_name", "first_name", "mid_init", "last_names",
+    "email_1", "email_2",
+    "affiliation_1", "affiliation_2", "affiliation_3", "affiliation_4"
   )
+  entry  <- entry[, col_order, drop = FALSE]
+  master <- master[, col_order, drop = FALSE]
+  master <- dplyr::bind_rows(master, entry)
 
-  invisible(new_df)
-}
+  # --- 9. Write to depot ----------------------------------------------------
+  arrow::write_parquet(master, mastersheet_path)
+  message(sprintf(
+    "Contributors mastersheet updated: %d new entry/entries added.", nrow(entry)
+  ))
 
-
-# ---- Private helpers -----------------------------------------------------
-
-#' @keywords internal
-.ensure_cols <- function(df, cols, fill = NA_character_) {
-  for (col in cols) {
-    if (!col %in% names(df)) df[[col]] <- fill
+  # --- 10. Optionally copy to working directory -----------------------------
+  if (download) {
+    local_name <- sprintf(
+      "contributors_mastersheet_%s.parquet",
+      format(Sys.Date(), "%Y%m%d")
+    )
+    local_path <- file.path(getwd(), local_name)
+    file.copy(mastersheet_path, local_path, overwrite = TRUE)
+    message(sprintf("Local copy saved: %s", local_path))
   }
-  df
-}
 
-#' @keywords internal
-.empty_master <- function() {
-  data.frame(
-    contributor_id = character(),
-    full_name      = character(),
-    first_name     = character(),
-    last_name      = character(),
-    email          = character(),
-    affiliation_1  = character(),
-    affiliation_2  = character(),
-    affiliation_3  = character(),
-    stringsAsFactors = FALSE
-  )
-}
-
-#' Extract the numeric suffix from the highest existing contributor_id
-#' and return the next integer to use.
-#' @keywords internal
-.next_id_n <- function(existing_ids) {
-  if (length(existing_ids) == 0L) return(1L)
-  nums <- suppressWarnings(
-    as.integer(stringr::str_extract(existing_ids, "\\d{4}$"))
-  )
-  max(nums, na.rm = TRUE) + 1L
+  invisible(master)
 }
