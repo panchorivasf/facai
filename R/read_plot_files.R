@@ -47,7 +47,8 @@ read_plot_files <- function(dir = ".", pattern = "\\.txt$", delim = "\t", ...) {
   message(sprintf("Reading %d file(s) from '%s'.", length(files), dir))
 
   purrr::map(files, \(f) {
-    readr::read_delim(f, delim = delim, show_col_types = FALSE, ...) |>
+    readr::read_delim(f, delim = delim, show_col_types = FALSE,
+                      col_types = readr::cols(.default = "c"), ...) |>
       dplyr::mutate(
         plot_name = tools::file_path_sans_ext(basename(f)),
         .before = 1
