@@ -23,108 +23,17 @@ Default is \code{NULL}.}
 
 \item{popup_cols}{Character vector specifying which columns to display in
 the popup when clicking on features. If \code{NULL} (default), the function
-automatically selects the first 5 non-geometry columns. Column names should
-match those in the input data.}
+automatically selects the first 5 non-geometry columns.}
 }
 \value{
-A \code{leaflet} object that can be displayed interactively in RStudio
-  Viewer, R Markdown documents, or Shiny applications. The map includes:
-  \itemize{
-    \item Multiple basemap options (OpenStreetMap, Satellite, Light, Dark,
-          Topographic, Streets) selectable via radio buttons
-    \item Interactive popups showing selected attribute information
-    \item Optional country boundary overlays
-    \item Automatic styling based on geometry type (points, polygons, or lines)
-  }
+A \code{leaflet} object. To save as a standalone HTML file use:
+  \code{htmlwidgets::saveWidget(map, "map.html", selfcontained = TRUE)}
+  The \code{selfcontained = TRUE} argument is important — it bundles all
+  JS/CSS so the map renders correctly when opened from a local file path.
 }
 \description{
 This function creates an interactive leaflet map from spatial data with
 automatic CRS detection and transformation to WGS84. It provides multiple
 basemap options accessible through a radio button control (similar to Google
 Maps layer switcher) and optional country boundary overlays.
-}
-\details{
-\strong{CRS Handling:}
-The function automatically handles coordinate reference systems:
-\itemize{
-  \item If data is already in WGS84 (EPSG:4326), no transformation occurs
-  \item If data has a defined CRS other than WGS84, it transforms to WGS84
-  \item If data has no CRS but coordinates suggest UTM (absolute values > 180
-        for longitude or > 90 for latitude), it attempts to auto-detect the
-        UTM zone and hemisphere, then transforms to WGS84
-  \item If coordinates appear to be in decimal degrees, assumes WGS84
-}
-
-\strong{Geometry Types:}
-The function automatically detects and styles different geometry types:
-\itemize{
-  \item \strong{POINT}: Rendered as red circle markers
-  \item \strong{POLYGON}: Rendered as blue polygons with semi-transparent fill
-  \item \strong{LINE}: Rendered as blue lines
-}
-
-\strong{Basemap Providers:}
-Six basemap options are available via radio button control:
-\itemize{
-  \item OpenStreetMap: Standard OSM mapping
-  \item Satellite: Esri World Imagery (aerial/satellite)
-  \item Light: CartoDB Positron (minimal light theme)
-  \item Dark: CartoDB Dark Matter (dark theme)
-  \item Topographic: OpenTopoMap (topographic features)
-  \item Streets: Esri World Street Map
-}
-}
-\note{
-\itemize{
-  \item Requires internet connection to load basemap tiles
-  \item For large datasets (>10,000 features), consider simplifying geometries
-        or filtering data for better performance
-  \item Country boundaries are obtained from Natural Earth data via the
-        \code{rnaturalearth} package at medium scale (1:50m)
-  \item UTM zone auto-detection assumes coordinates are in meters and uses
-        a simple centroid-based calculation
-}
-}
-\examples{
-\dontrun{
-library(sf)
-library(leaflet)
-
-# Example 1: Basic usage with an sf object
-interactive_map(plot_sf)
-
-# Example 2: Add country boundaries for Honduras and neighbors
-interactive_map(plot_sf,
-               countries = c("honduras", "guatemala", "el salvador",
-                            "nicaragua", "belize"))
-
-# Example 3: Customize popup columns
-interactive_map(plot_sf,
-               countries = "honduras",
-               popup_cols = c("PlotID", "plo_elevation", "plo_notes"))
-
-# Example 4: Use with data frame containing geometry column
-# (will auto-detect CRS from coordinates)
-plot_data_with_geom <- data.frame(
-  id = 1:3,
-  value = c(10, 20, 30),
-  geometry = st_sfc(
-    st_point(c(-87.5, 14.5)),
-    st_point(c(-87.6, 14.6)),
-    st_point(c(-87.7, 14.7)),
-    crs = 4326
-  )
-)
-interactive_map(plot_data_with_geom)
-
-# Example 5: Map plots outside country boundaries
-interactive_map(plots_outside,
-               countries = "honduras",
-               popup_cols = c("PlotID", "plo_elevation"))
-}
-
-}
-\seealso{
-\code{\link[leaflet]{leaflet}}, \code{\link[sf]{st_transform}},
-\code{\link[rnaturalearth]{ne_countries}}
 }
