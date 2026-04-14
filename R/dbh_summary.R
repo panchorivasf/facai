@@ -33,10 +33,21 @@
 #' }
 #'
 #' @export
-dbh_summary <- function(df, export = FALSE,
+dbh_summary <- function(df,
+                        main = "DBH Distribution",
+                        xlab   = "DBH (cm)",
+                        ylab   = "Frequency",
+                        export = FALSE,
                         file_name = "dbh_summary",
                         dir = ".") {
-  x <- df$DBH
+  x <- as.numeric(df$DBH)
+
+  hist(x,
+       main   = main,
+       xlab   = xlab,
+       ylab   = ylab,
+       breaks = 100)
+
   s <- c(summary(x), sd = sd(x, na.rm = TRUE))
   result <- as.data.frame(t(as.matrix(s))) |>
     dplyr::rename(min = `Min.`, q1 = `1st Qu.`, median = Median,

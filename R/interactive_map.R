@@ -75,12 +75,12 @@ interactive_map <- function(data,
   # files (file:// referer policy). All providers below work without a referer
   # and are safe for htmlwidgets::saveWidget(..., selfcontained = TRUE).
   map <- leaflet::leaflet(data) |>
+    leaflet::addProviderTiles(leaflet::providers$CartoDB.DarkMatter,
+                              group = "Dark")          |>
     leaflet::addProviderTiles(leaflet::providers$CartoDB.Positron,
                               group = "Light")         |>  # default base layer
     leaflet::addProviderTiles(leaflet::providers$Esri.WorldImagery,
                               group = "Satellite")     |>
-    leaflet::addProviderTiles(leaflet::providers$CartoDB.DarkMatter,
-                              group = "Dark")          |>
     leaflet::addProviderTiles(leaflet::providers$Esri.WorldStreetMap,
                               group = "Streets")       |>
     leaflet::addProviderTiles(leaflet::providers$Esri.WorldTopoMap,
@@ -131,7 +131,7 @@ interactive_map <- function(data,
         stroke      = FALSE,
         # weight      = 2,
         popup       = popup_html,
-        group       = "Data Points"
+        group       = "GFBI Points"
       )
   } else if (grepl("POLYGON", geom_type)) {
     map <- map |>
@@ -156,7 +156,7 @@ interactive_map <- function(data,
 
   # Layer control -----------------------------------------------------------
   active_overlays <- c(
-    if (grepl("POINT",   geom_type))   "Data Points",
+    if (grepl("POINT",   geom_type))   "GFBI Points",
     if (grepl("POLYGON", geom_type))   "Data Polygons",
     if (grepl("LINE",    geom_type))   "Data Lines",
     if (!is.null(countries))           "Country Boundaries"
@@ -164,7 +164,7 @@ interactive_map <- function(data,
 
   map <- map |>
     leaflet::addLayersControl(
-      baseGroups   = c("Light", "Satellite", "Dark", "Streets", "Topographic"),
+      baseGroups   = c("Dark", "Light", "Satellite", "Streets", "Topographic"),
       overlayGroups = active_overlays,
       options      = leaflet::layersControlOptions(collapsed = FALSE)
     )

@@ -35,7 +35,8 @@
 #' }
 #'
 #' @export
-read_plot_files <- function(dir = ".", pattern = "\\.txt$", delim = "\t", ...) {
+read_plot_files <- function(dir = ".", pattern = "\\.txt$", delim = "\t",
+                            col_types = readr::cols(.default = "c"), ...) {
 
   files <- list.files(dir, pattern = pattern, full.names = TRUE)
 
@@ -48,7 +49,7 @@ read_plot_files <- function(dir = ".", pattern = "\\.txt$", delim = "\t", ...) {
 
   purrr::map(files, \(f) {
     readr::read_delim(f, delim = delim, show_col_types = FALSE,
-                      col_types = readr::cols(.default = "c"), ...) |>
+                      col_types = col_types, ...) |>
       dplyr::mutate(
         plot_name = tools::file_path_sans_ext(basename(f)),
         .before = 1
