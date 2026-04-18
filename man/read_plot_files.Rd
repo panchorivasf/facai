@@ -4,7 +4,13 @@
 \alias{read_plot_files}
 \title{Import multiple delimited text files into a single table}
 \usage{
-read_plot_files(dir = ".", pattern = "\\\\.txt$", delim = "\\t", ...)
+read_plot_files(
+  dir = ".",
+  pattern = "\\\\.txt$",
+  delim = "\\t",
+  col_types = readr::cols(.default = "c"),
+  ...
+)
 }
 \arguments{
 \item{dir}{Character. Directory containing the files. Defaults to the

@@ -4,7 +4,15 @@
 \alias{dbh_summary}
 \title{Summarize DBH distribution of a forest plot data frame}
 \usage{
-dbh_summary(df, export = FALSE, file_name = "dbh_summary", dir = ".")
+dbh_summary(
+  df,
+  main = "DBH Distribution",
+  xlab = "DBH (cm)",
+  ylab = "Frequency",
+  export = FALSE,
+  file_name = "dbh_summary",
+  dir = "."
+)
 }
 \arguments{
 \item{df}{A data frame containing a numeric column named \code{DBH}.}
