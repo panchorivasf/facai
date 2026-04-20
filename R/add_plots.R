@@ -29,7 +29,8 @@ add_plots <- function(map,
                      plot_data,
                      color = "green",
                      size = 4,
-                     opacity = 0.7){
+                     opacity = 0.7,
+                     group = "New - Received"){
 
   addCircleMarkers(map,
                    data = plot_data,
@@ -40,9 +41,10 @@ add_plots <- function(map,
                    popup = ~paste0(
                      "Country: ", Country," <br>",
                      "Site: ",Site,"  <br>",
-                     "PlotID: ", PlotID, " <br>",
                      "PI: ", PI, " <br>",
                      "PIe: ", PIe," <br>",
                      "Dataset: ", Dataset," plots <br>",
-                     "Plot Size: ", Size," ha"))
+                     "PlotID: ", PlotID, " <br>",
+                     "Plot Size: ", Size," ha"),
+                   group = group)
 }
