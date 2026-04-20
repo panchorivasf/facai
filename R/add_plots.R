@@ -26,11 +26,11 @@
 #' @importFrom leaflet addCircleMarkers
 #' @export
 add_plots <- function(map,
-                     plot_data,
-                     color = "green",
-                     size = 4,
-                     opacity = 0.7,
-                     group = "New - Received"){
+                      plot_data,
+                      color = "green",
+                      size = 4,
+                      opacity = 0.7,
+                      group = "New - Received"){
 
   addCircleMarkers(map,
                    data = plot_data,
@@ -44,6 +44,7 @@ add_plots <- function(map,
                      "PI: ", PI, " <br>",
                      "PIe: ", PIe," <br>",
                      "Dataset: ", Dataset," plots <br>",
+                     "Censuses: ", Censuses, "<br>",
                      "PlotID: ", PlotID, " <br>",
                      "Plot Size: ", Size," ha"),
                    group = group)

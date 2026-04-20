@@ -32,7 +32,7 @@
 #' }
 #'
 #' @importFrom dplyr count mutate select filter summarise pull arrange group_by
-#'   ungroup n_distinct distinct left_join
+#'   ungroup n_distinct distinct left_join cumany
 #' @importFrom cli cli_h1 cli_h2 cli_bullets cli_alert_warning cli_alert_success
 #'   cli_alert_danger
 #' @export
