@@ -69,11 +69,12 @@ make_plot_metadata <- function(country,
     Longitude = longitude
   )
 
-  cnt <- tolower(get_country_code(country)$iso3c)
-
-
   if (export_xlsx) {
-    openxlsx::write.xlsx(result, paste0("in_", cnt,"_",tolower(site),"_metadata.xlsx"))
+    cnt      <- tolower(get_country_code(country)$iso3c)
+    filename <- paste0("in_", cnt, "_", tolower(site), "_metadata.xlsx")
+    wd <- getwd()
+    openxlsx::write.xlsx(result, filename)
+    cat("File", filename, "successfully exported to", wd, "!\n")
   }
 
   return(result)
