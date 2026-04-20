@@ -42,11 +42,11 @@ dbh_summary <- function(df,
                         dir = ".") {
   x <- as.numeric(df$DBH)
 
-  hist(x,
-       main   = main,
-       xlab   = xlab,
-       ylab   = ylab,
-       breaks = 100)
+  histogram <-  hist(x,
+                     main   = main,
+                     xlab   = xlab,
+                     ylab   = ylab,
+                     breaks = 100)
 
   s <- c(summary(x), sd = sd(x, na.rm = TRUE))
   result <- as.data.frame(t(as.matrix(s))) |>

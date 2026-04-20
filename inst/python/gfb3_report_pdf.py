@@ -99,6 +99,14 @@ d_tbl.setStyle(tbl_style())
 story.append(d_tbl)
 story.append(Spacer(1, 10))
 
+
+# ── DBH Histogram ─────────────────────────────────────────────────────────────
+dbh_hist_path = os.path.join(tmp_dir, "dbh_hist.png")
+if os.path.exists(dbh_hist_path):
+    story.append(Spacer(1, 8))
+    story.append(Image(dbh_hist_path, width=400, height=267))
+    story.append(Spacer(1, 10))
+
 # ── Growth Summary ────────────────────────────────────────────────────────────
 story.append(Paragraph("Growth Summary (cm DBH / interval)", h2))
 story.append(Paragraph(
@@ -113,6 +121,16 @@ g_tbl  = Table(g_data)
 g_tbl.setStyle(tbl_style())
 story.append(g_tbl)
 story.append(Spacer(1, 10))
+
+# ── Growth Histogram ──────────────────────────────────────────────────────────
+import os
+from reportlab.platypus import Image
+
+hist_path = os.path.join(tmp_dir, "growth_hist.png")
+if os.path.exists(hist_path):
+    story.append(Spacer(1, 8))
+    story.append(Image(hist_path, width=400, height=267))
+    story.append(Spacer(1, 10))
 
 # ── Data Quality Flags ────────────────────────────────────────────────────────
 story.append(Paragraph("Data Quality Flags", h2))

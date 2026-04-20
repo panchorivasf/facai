@@ -72,16 +72,22 @@ gfb3_format_report <- function(dat,
   )
 
   # ── 4. DBH summary ───────────────────────────────────────────────────────────
+  dbh_hist_path <- tempfile("dbh_hist_", fileext = ".png")
+  png(dbh_hist_path, width = 600, height = 400, res = 96)
   invisible(capture.output(
     dbh_sum_obj <- suppressMessages(dbh_summary(dat))
   ))
+  dev.off()
   dbh_sum <- capture.output(print(dbh_sum_obj))
-
   # ── 5. Growth summary ────────────────────────────────────────────────────────
+  hist_path <- tempfile("growth_hist_", fileext = ".png")
+  png(hist_path, width = 600, height = 400, res = 96)
   invisible(capture.output(
     growth_sum_obj <- suppressMessages(growth_summary(dat))
   ))
+  dev.off()
   growth_sum <- capture.output(print(growth_sum_obj))
+
 
   # ── 6. Negative / zero growth ────────────────────────────────────────────────
   n_neg_growth <- dat |>
@@ -203,15 +209,22 @@ gfb3_format_report <- function(dat,
   if (export_pdf || export_xlsx) {
     if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
 
-    # Write intermediary CSVs for Python to consume
     tmp_dir <- tempfile("gfb3_report_")
     dir.create(tmp_dir)
-    on.exit(unlink(tmp_dir, recursive = TRUE), add = TRUE)
+
+    on.exit({
+      unlink(tmp_dir, recursive = TRUE)
+      unlink(hist_path)
+      unlink(dbh_hist_path)
+    }, add = TRUE)
 
     readr::write_csv(status_tbl,  file.path(tmp_dir, "status.csv"))
     readr::write_csv(flags_tbl,   file.path(tmp_dir, "flags.csv"))
     readr::write_csv(dbh_sum_obj, file.path(tmp_dir, "dbh.csv"))
     readr::write_csv(as.data.frame(growth_sum_obj), file.path(tmp_dir, "growth.csv"))
+    file.copy(hist_path,     file.path(tmp_dir, "growth_hist.png"))
+    file.copy(dbh_hist_path, file.path(tmp_dir, "dbh_hist.png"))
+
 
     meta <- data.frame(
       key   = c("dataset_name", "n_rows", "n_trees", "n_plots",
