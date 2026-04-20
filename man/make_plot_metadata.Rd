@@ -9,11 +9,13 @@ make_plot_metadata(
   site,
   pi,
   pie,
+  census,
   plot_ids = NULL,
   size = NULL,
   latitude = NULL,
   longitude = NULL,
-  data = NULL
+  data = NULL,
+  export_xlsx = TRUE
 )
 }
 \arguments{
@@ -26,6 +28,8 @@ to look up the correct name).}
 
 \item{pie}{Character. Email address of the principal investigator.}
 
+\item{census}{Numeric. Number of censuses in the dataset.}
+
 \item{plot_ids}{Character vector. Vector of PlotIDs.}
 
 \item{size}{Numeric. Plot area in hectares (scalar, applied to all plots).}
@@ -37,6 +41,8 @@ to look up the correct name).}
 \item{data}{Optional data frame with columns \code{PlotID}, \code{Size},
 \code{Latitude}, \code{Longitude}. If provided, these columns are taken
 from the data frame and the scalar arguments are ignored.}
+
+\item{export_xlsx}{Logical. Whether to export the table as .xlsx  file.}
 }
 \value{
 A tibble with one row per plot and columns: \code{Country},
