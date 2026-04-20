@@ -1,9 +1,9 @@
-import sys, csv
+import sys, csv, os
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table,
-                                  TableStyle, HRFlowable)
+                                  TableStyle, HRFlowable, Image, KeepTogether)
 
 tmp_dir  = sys.argv[1]
 out_path = sys.argv[2]
@@ -57,7 +57,6 @@ story.append(HRFlowable(width="100%", thickness=1,
 story.append(Spacer(1, 12))
 
 # ── Overview ─────────────────────────────────────────────────────────────────
-story.append(Paragraph("Overview", h2))
 overview_text = (
     f"This report summarises the diagnostic results for the <b>{meta['dataset_name']}</b> "
     f"dataset formatted to GFB3 standard. The dataset contains <b>{int(meta['n_rows']):,}</b> "
@@ -65,103 +64,106 @@ overview_text = (
     f"<b>{int(meta['n_trees']):,}</b> individual stems censused between "
     f"<b>{meta['yr_min']}</b> and <b>{meta['yr_max']}</b>."
 )
-story.append(Paragraph(overview_text, body))
-story.append(Spacer(1, 10))
+story.append(KeepTogether([
+    Paragraph("Overview", h2),
+    Paragraph(overview_text, body),
+    Spacer(1, 10),
+]))
 
 # ── Status Distribution ───────────────────────────────────────────────────────
-story.append(Paragraph("Status Distribution", h2))
-story.append(Paragraph(
-    "The table below shows the breakdown of tree records by GFB3 status code. "
-    "Status 0 (alive) should dominate; elevated counts of status 9 (missing) "
-    "may indicate census gaps.", body))
-story.append(Spacer(1, 6))
-
 s_data = [["Status", "Label", "Count", "Pct (%)"]] + [
     [r["Status"], r["Label"], f"{int(r['n']):,}", r["pct"]] for r in status
 ]
-s_tbl = Table(s_data, colWidths=[50, 180, 70, 70])
+s_tbl = Table(s_data, colWidths=[50, 180, 70, 70], splitByRow=False)
 s_tbl.setStyle(tbl_style())
-story.append(s_tbl)
-story.append(Spacer(1, 10))
+
+story.append(KeepTogether([
+    Paragraph("Status Distribution", h2),
+    Paragraph(
+        "The table below shows the breakdown of tree records by GFB3 status code. "
+        "Status 0 (alive) should dominate; elevated counts of status 9 (missing) "
+        "may indicate census gaps.", body),
+    Spacer(1, 6),
+    s_tbl,
+    Spacer(1, 10),
+]))
 
 # ── DBH Summary ──────────────────────────────────────────────────────────────
-story.append(Paragraph("DBH Summary (cm)", h2))
-story.append(Paragraph(
-    "Descriptive statistics for diameter at breast height (DBH, cm). "
-    "Values below 10 cm fall below the GFB3 minimum threshold and should "
-    "be reviewed.", body))
-story.append(Spacer(1, 6))
-
 d_keys = list(dbh[0].keys())
 d_data = [d_keys] + [[r[k] for k in d_keys] for r in dbh]
-d_tbl  = Table(d_data)
+d_tbl  = Table(d_data, splitByRow=False)
 d_tbl.setStyle(tbl_style())
-story.append(d_tbl)
-story.append(Spacer(1, 10))
 
-
-# ── DBH Histogram ─────────────────────────────────────────────────────────────
 dbh_hist_path = os.path.join(tmp_dir, "dbh_hist.png")
+dbh_block = [
+    Paragraph("DBH Summary (cm)", h2),
+    Paragraph(
+        "Descriptive statistics for diameter at breast height (DBH, cm). "
+        "Values below 10 cm fall below the GFB3 minimum threshold and should "
+        "be reviewed.", body),
+    Spacer(1, 6),
+    d_tbl,
+]
 if os.path.exists(dbh_hist_path):
-    story.append(Spacer(1, 8))
-    story.append(Image(dbh_hist_path, width=400, height=267))
-    story.append(Spacer(1, 10))
+    dbh_block += [Spacer(1, 8), Image(dbh_hist_path, width=400, height=267)]
+dbh_block.append(Spacer(1, 10))
+story.append(KeepTogether(dbh_block))
 
 # ── Growth Summary ────────────────────────────────────────────────────────────
-story.append(Paragraph("Growth Summary (cm DBH / interval)", h2))
-story.append(Paragraph(
-    "Summary of per-interval DBH increments. Negative values indicate apparent "
-    "shrinkage, which may reflect measurement error or POM changes. Values "
-    "exceeding 5 cm/yr warrant individual inspection.", body))
-story.append(Spacer(1, 6))
-
 g_keys = list(growth[0].keys())
 g_data = [g_keys] + [[r[k] for k in g_keys] for r in growth]
-g_tbl  = Table(g_data)
+g_tbl  = Table(g_data, splitByRow=False)
 g_tbl.setStyle(tbl_style())
-story.append(g_tbl)
-story.append(Spacer(1, 10))
 
-# ── Growth Histogram ──────────────────────────────────────────────────────────
-import os
-from reportlab.platypus import Image
-
-hist_path = os.path.join(tmp_dir, "growth_hist.png")
-if os.path.exists(hist_path):
-    story.append(Spacer(1, 8))
-    story.append(Image(hist_path, width=400, height=267))
-    story.append(Spacer(1, 10))
+growth_hist_path = os.path.join(tmp_dir, "growth_hist.png")
+growth_block = [
+    Paragraph("Growth Summary (cm DBH / interval)", h2),
+    Paragraph(
+        "Summary of per-interval DBH increments. Negative values indicate apparent "
+        "shrinkage, which may reflect measurement error or POM changes. Values "
+        "exceeding 5 cm/yr warrant individual inspection.", body),
+    Spacer(1, 6),
+    g_tbl,
+]
+if os.path.exists(growth_hist_path):
+    growth_block += [Spacer(1, 8), Image(growth_hist_path, width=400, height=267)]
+growth_block.append(Spacer(1, 10))
+story.append(KeepTogether(growth_block))
 
 # ── Data Quality Flags ────────────────────────────────────────────────────────
-story.append(Paragraph("Data Quality Flags", h2))
-story.append(Paragraph(
-    "Each flag below reports a count of records triggering a specific quality "
-    "check. Critical flags must be resolved; warnings are worth reviewing but "
-    "may be acceptable depending on the dataset.", body))
-story.append(Spacer(1, 6))
-
 sev_colors = {"critical": "#FFDDC1", "warning": "#FFF9C4", "info": "#E8F5E9"}
 f_data = [["Flag", "Count", "Severity"]] + [
     [r["Flag"], r["Count"], r["Severity"]] for r in flags
 ]
-f_tbl = Table(f_data, colWidths=[270, 70, 80])
+f_tbl = Table(f_data, colWidths=[270, 70, 80], splitByRow=False)
 base_style = tbl_style()
 for i, r in enumerate(flags, start=1):
     bg = sev_colors.get(r["Severity"], "#FFFFFF")
     base_style.add("BACKGROUND", (0, i), (-1, i), colors.HexColor(bg))
 f_tbl.setStyle(base_style)
-story.append(f_tbl)
-story.append(Spacer(1, 14))
+
+story.append(KeepTogether([
+    Paragraph("Data Quality Flags", h2),
+    Paragraph(
+        "Each flag below reports a count of records triggering a specific quality "
+        "check. Critical flags must be resolved; warnings are worth reviewing but "
+        "may be acceptable depending on the dataset.", body),
+    Spacer(1, 6),
+    f_tbl,
+    Spacer(1, 14),
+]))
 
 # ── Verdict ───────────────────────────────────────────────────────────────────
-story.append(HRFlowable(width="100%", thickness=1,
-                         color=colors.HexColor("#2E4057")))
-story.append(Spacer(1, 6))
-story.append(Paragraph("Verdict", h2))
 verdict = meta["verdict"]
 vcolor  = ("#C62828" if verdict.startswith("FAIL")
            else "#F57F17" if verdict.startswith("WARN")
            else "#2E7D32")
-story.append(Paragraph(f'<font color="{vcolor}"><b>{verdict}</b></font>', body))
+
+story.append(KeepTogether([
+    HRFlowable(width="100%", thickness=1, color=colors.HexColor("#2E4057")),
+    Spacer(1, 6),
+    Paragraph("Verdict", h2),
+    Paragraph(f'<font color="{vcolor}"><b>{verdict}</b></font>', body),
+]))
 
 doc.build(story)
