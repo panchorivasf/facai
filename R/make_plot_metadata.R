@@ -8,6 +8,7 @@
 #' @param site Character. Site or forest name.
 #' @param pi Character. Full name of the principal investigator.
 #' @param pie Character. Email address of the principal investigator.
+#' @param census Numeric. Number of censuses in the dataset.
 #' @param plot_ids Character vector. Vector of PlotIDs.
 #' @param size Numeric. Plot area in hectares (scalar, applied to all plots).
 #' @param latitude Numeric. Latitude in decimal degrees (scalar, applied to all plots).
@@ -15,6 +16,7 @@
 #' @param data Optional data frame with columns \code{PlotID}, \code{Size},
 #'   \code{Latitude}, \code{Longitude}. If provided, these columns are taken
 #'   from the data frame and the scalar arguments are ignored.
+#' @param export_xlsx  Logical. Whether to export the table as .xlsx  file.
 #'
 #' @return A tibble with one row per plot and columns: \code{Country},
 #'   \code{Site}, \code{PI}, \code{PIe}, \code{Dataset}, \code{PlotID},
@@ -40,11 +42,13 @@ make_plot_metadata <- function(country,
                                site,
                                pi,
                                pie,
+                               census,
                                plot_ids  = NULL,
                                size      = NULL,
                                latitude  = NULL,
                                longitude = NULL,
-                               data      = NULL) {
+                               data      = NULL,
+                               export_xlsx = TRUE) {
   if (!is.null(data)) {
     plot_ids  <- data$PlotID
     size      <- data$Size
@@ -52,15 +56,26 @@ make_plot_metadata <- function(country,
     longitude <- data$Longitude
   }
 
-  tibble::tibble(
+  result <- tibble::tibble(
     Country   = country,
     Site      = site,
     PI        = pi,
     PIe       = pie,
     Dataset   = length(plot_ids),
+    Censuses  = census,
     PlotID    = plot_ids,
     Size      = size,
     Latitude  = latitude,
     Longitude = longitude
   )
+
+  cnt <- tolower(get_country_code(country)$iso3c)
+
+
+  if (export_xlsx) {
+    openxlsx::write.xlsx(result, paste0("in_", cnt,"_",tolower(site),"_metadata.xlsx"))
+  }
+
+  return(result)
+
 }
