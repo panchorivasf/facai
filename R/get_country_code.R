@@ -17,6 +17,9 @@
 #' @export
 get_country_code <- function(country){
   countrycode::codelist |>
-    select(country.name.en, un.name.en, iso2c, iso3c, un) |>
-    filter(grepl(country, country.name.en, ignore.case = TRUE))
+    dplyr::select(country.name.en, un.name.en, iso2c, iso3c, un) |>
+    dplyr::filter(
+      grepl(country, country.name.en, ignore.case = TRUE) |
+        grepl(country, un.name.en,      ignore.case = TRUE)
+    )
 }

@@ -9,7 +9,7 @@ make_plot_metadata(
   site,
   pi,
   pie,
-  census,
+  census = NULL,
   plot_ids = NULL,
   size = NULL,
   latitude = NULL,
@@ -28,7 +28,9 @@ to look up the correct name).}
 
 \item{pie}{Character. Email address of the principal investigator.}
 
-\item{census}{Numeric. Number of censuses in the dataset.}
+\item{census}{Character or numeric. Number of censuses (or range like \code{"2-3"}).
+Required when \code{data} is \code{NULL}; derived automatically from
+\code{YR}/\code{PrevYR} when \code{data} is in gfb3 format.}
 
 \item{plot_ids}{Character vector. Vector of PlotIDs.}
 
@@ -38,9 +40,12 @@ to look up the correct name).}
 
 \item{longitude}{Numeric. Longitude in decimal degrees (scalar, applied to all plots).}
 
-\item{data}{Optional data frame with columns \code{PlotID}, \code{Size},
-\code{Latitude}, \code{Longitude}. If provided, these columns are taken
-from the data frame and the scalar arguments are ignored.}
+\item{data}{Optional data frame. Accepts either a plot-level data frame with
+columns \code{PlotID}, \code{Size}, \code{Latitude}, \code{Longitude}, or
+a tree-level (gfb3) data frame with columns \code{PlotID}, \code{PA},
+\code{Latitude}, \code{Longitude}, \code{YR}, \code{PrevYR}. In the
+latter case \code{plot_ids}, \code{size}, \code{latitude},
+\code{longitude}, and \code{census} are all derived from the data.}
 
 \item{export_xlsx}{Logical. Whether to export the table as .xlsx  file.}
 }
