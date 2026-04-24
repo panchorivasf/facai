@@ -56,6 +56,9 @@ gfb3_report <- function(dat,
     "9" = "missing"
   )
 
+  dat <- dat |>
+    mutate(Status = as.character(Status))
+
   status_tbl <- dat |>
     count(Status) |>
     mutate(
