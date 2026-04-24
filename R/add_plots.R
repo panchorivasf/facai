@@ -32,6 +32,17 @@ add_plots <- function(map,
                       opacity = 0.7,
                       group = "New - Received"){
 
+  Dataset <- nrow(plot_data)
+  censuses <- as.numeric(plot_data$Censuses)
+  census_min <- min(censuses, na.rm = TRUE)
+  census_max <- max(censuses, na.rm = TRUE)
+
+  census_text <- if (census_min != census_max) {
+    paste0(census_min, " - ", census_max)
+  } else {
+    census_min
+  }
+
   addCircleMarkers(map,
                    data = plot_data,
                    radius = size,
@@ -39,13 +50,13 @@ add_plots <- function(map,
                    fillOpacity = opacity,
                    color = color,
                    popup = ~paste0(
-                     "Country: ", Country," <br>",
-                     "Site: ",Site,"  <br>",
+                     "Country: ", Country, " <br>",
+                     "Site: ", Site, " <br>",
                      "PI: ", PI, " <br>",
-                     "PIe: ", PIe," <br>",
-                     "Dataset: ", Dataset," plots <br>",
-                     "Censuses: ", Censuses, "<br>",
+                     "PIe: ", PIe, " <br>",
+                     "Dataset size: ", Dataset, " plots <br>",
+                     "Censuses: ", census_text, " <br>",
                      "PlotID: ", PlotID, " <br>",
-                     "Plot Size: ", Size," ha"),
+                     "Plot Size: ", Size, " ha"),
                    group = group)
 }

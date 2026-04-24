@@ -7,6 +7,7 @@
 make_plot_metadata(
   country,
   site,
+  data = NULL,
   pi,
   pie,
   census = NULL,
@@ -14,7 +15,6 @@ make_plot_metadata(
   size = NULL,
   latitude = NULL,
   longitude = NULL,
-  data = NULL,
   export_xlsx = TRUE
 )
 }
@@ -24,28 +24,33 @@ to look up the correct name).}
 
 \item{site}{Character. Site or forest name.}
 
-\item{pi}{Character. Full name of the principal investigator.}
-
-\item{pie}{Character. Email address of the principal investigator.}
-
-\item{census}{Character or numeric. Number of censuses (or range like \code{"2-3"}).
-Required when \code{data} is \code{NULL}; derived automatically from
-\code{YR}/\code{PrevYR} when \code{data} is in gfb3 format.}
-
-\item{plot_ids}{Character vector. Vector of PlotIDs.}
-
-\item{size}{Numeric. Plot area in hectares (scalar, applied to all plots).}
-
-\item{latitude}{Numeric. Latitude in decimal degrees (scalar, applied to all plots).}
-
-\item{longitude}{Numeric. Longitude in decimal degrees (scalar, applied to all plots).}
-
-\item{data}{Optional data frame. Accepts either a plot-level data frame with
+\item{data}{A data frame. Accepts either a plot-level data frame with
 columns \code{PlotID}, \code{Size}, \code{Latitude}, \code{Longitude}, or
 a tree-level (gfb3) data frame with columns \code{PlotID}, \code{PA},
 \code{Latitude}, \code{Longitude}, \code{YR}, \code{PrevYR}. In the
 latter case \code{plot_ids}, \code{size}, \code{latitude},
 \code{longitude}, and \code{census} are all derived from the data.}
+
+\item{pi}{Character. Full name of the principal investigator.}
+
+\item{pie}{Character. Email address of the principal investigator.}
+
+\item{census}{Character or numeric. Number of censuses (or range like
+\code{"2-3"}).Derived from \code{data} when provided.
+ Required when \code{data} is \code{NULL}, otherwise derived from
+ \code{YR}/\code{PrevYR}.}
+
+\item{plot_ids}{Character vector. Vector of PlotIDs. Required when \code{data}
+is \code{NULL}, otherwise derived from \code{PlotID}.}
+
+\item{size}{Numeric. Plot area in hectares. Scalar, applied to all plots when
+\code{data} is \code{NULL}, otherwise derived from \code{PA}.}
+
+\item{latitude}{Numeric. Latitude in decimal degrees. Scalar, applied to all
+plots when \code{data} is \code{NULL}, otherwise derived.}
+
+\item{longitude}{Numeric. Longitude in decimal degrees. Scalar, applied to all
+plots when \code{data} is \code{NULL}, otherwise derived.}
 
 \item{export_xlsx}{Logical. Whether to export the table as .xlsx  file.}
 }
@@ -62,9 +67,9 @@ InterNodes contributor registry and leaflet map visualisation.
 \dontrun{
 ituri_xy <- make_plot_metadata(
   country   = "Democratic Republic of the Congo",
-  site      = "Ituri",
-  pi        = "Jean-Remy Makana",
-  pie       = "jeanremy@example.com",
+  site      = "Forest1",
+  pi        = "Jean-Paul Sartre",
+  pie       = "jeanpsartre@gmail.com",
   plot_ids  = c("in_co_edoro_1", "in_co_edoro_2", "in_co_lenda_1"),
   size      = 10,
   latitude  = 1.4368,

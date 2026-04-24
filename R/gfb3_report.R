@@ -24,7 +24,7 @@
 #'
 #' @examples
 #' \dontrun{
-#' result <- gfb3_format_report(paracou_gfb3,
+#' result <- gfb3_report(paracou_gfb3,
 #'                               export_pdf  = TRUE,
 #'                               export_xlsx = TRUE,
 #'                               output_dir  = "reports/",
@@ -36,11 +36,11 @@
 #' @importFrom cli cli_h1 cli_h2 cli_bullets cli_alert_warning cli_alert_success
 #'   cli_alert_danger
 #' @export
-gfb3_format_report <- function(dat,
-                               export_pdf   = FALSE,
-                               export_xlsx  = FALSE,
-                               output_dir   = ".",
-                               dataset_name = "gfb3_dataset") {
+gfb3_report <- function(dat,
+                        export_pdf   = FALSE,
+                        export_xlsx  = FALSE,
+                        output_dir   = ".",
+                        dataset_name = "data") {
 
   # ── 1. Basic counts ──────────────────────────────────────────────────────────
   n_rows   <- nrow(dat)

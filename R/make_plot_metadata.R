@@ -6,21 +6,26 @@
 #' @param country Character. Official UN country name (use \code{get_country_code()}
 #'   to look up the correct name).
 #' @param site Character. Site or forest name.
-#' @param pi Character. Full name of the principal investigator.
-#' @param pie Character. Email address of the principal investigator.
-#' @param census Character or numeric. Number of censuses (or range like \code{"2-3"}).
-#'   Required when \code{data} is \code{NULL}; derived automatically from
-#'   \code{YR}/\code{PrevYR} when \code{data} is in gfb3 format.
-#' @param plot_ids Character vector. Vector of PlotIDs.
-#' @param size Numeric. Plot area in hectares (scalar, applied to all plots).
-#' @param latitude Numeric. Latitude in decimal degrees (scalar, applied to all plots).
-#' @param longitude Numeric. Longitude in decimal degrees (scalar, applied to all plots).
-#' @param data Optional data frame. Accepts either a plot-level data frame with
+#' @param data A data frame. Accepts either a plot-level data frame with
 #'   columns \code{PlotID}, \code{Size}, \code{Latitude}, \code{Longitude}, or
 #'   a tree-level (gfb3) data frame with columns \code{PlotID}, \code{PA},
 #'   \code{Latitude}, \code{Longitude}, \code{YR}, \code{PrevYR}. In the
 #'   latter case \code{plot_ids}, \code{size}, \code{latitude},
 #'   \code{longitude}, and \code{census} are all derived from the data.
+#' @param pi Character. Full name of the principal investigator.
+#' @param pie Character. Email address of the principal investigator.
+#' @param census Character or numeric. Number of censuses (or range like
+#'  \code{"2-3"}).Derived from \code{data} when provided.
+#'   Required when \code{data} is \code{NULL}, otherwise derived from
+#'   \code{YR}/\code{PrevYR}.
+#' @param plot_ids Character vector. Vector of PlotIDs. Required when \code{data}
+#' is \code{NULL}, otherwise derived from \code{PlotID}.
+#' @param size Numeric. Plot area in hectares. Scalar, applied to all plots when
+#' \code{data} is \code{NULL}, otherwise derived from \code{PA}.
+#' @param latitude Numeric. Latitude in decimal degrees. Scalar, applied to all
+#' plots when \code{data} is \code{NULL}, otherwise derived.
+#' @param longitude Numeric. Longitude in decimal degrees. Scalar, applied to all
+#' plots when \code{data} is \code{NULL}, otherwise derived.
 #' @param export_xlsx  Logical. Whether to export the table as .xlsx  file.
 #'
 #' @return A tibble with one row per plot and columns: \code{Country},
@@ -31,9 +36,9 @@
 #' \dontrun{
 #' ituri_xy <- make_plot_metadata(
 #'   country   = "Democratic Republic of the Congo",
-#'   site      = "Ituri",
-#'   pi        = "Jean-Remy Makana",
-#'   pie       = "jeanremy@example.com",
+#'   site      = "Forest1",
+#'   pi        = "Jean-Paul Sartre",
+#'   pie       = "jeanpsartre@gmail.com",
 #'   plot_ids  = c("in_co_edoro_1", "in_co_edoro_2", "in_co_lenda_1"),
 #'   size      = 10,
 #'   latitude  = 1.4368,
@@ -45,6 +50,7 @@
 #' @export
 make_plot_metadata <- function(country,
                                site,
+                               data      = NULL,
                                pi,
                                pie,
                                census    = NULL,
@@ -52,7 +58,6 @@ make_plot_metadata <- function(country,
                                size      = NULL,
                                latitude  = NULL,
                                longitude = NULL,
-                               data      = NULL,
                                export_xlsx = TRUE) {
 
   # Resolve country, disambiguate if needed
@@ -80,14 +85,18 @@ make_plot_metadata <- function(country,
       longitude <- plot_meta$Longitude
 
       census_counts <- data |>
+        dplyr::group_by(PlotID, TreeID) |>
+        dplyr::summarise(
+          n_census = dplyr::n_distinct(c(YR[!is.na(YR)], PrevYR[!is.na(PrevYR)])),
+          .groups = "drop"
+        ) |>
         dplyr::group_by(PlotID) |>
         dplyr::summarise(
-          n_census = dplyr::n_distinct(c(YR, PrevYR)),
-          .groups  = "drop"
+          n_census = max(n_census),
+          .groups = "drop"
         )
-      min_c  <- min(census_counts$n_census)
-      max_c  <- max(census_counts$n_census)
-      census <- if (min_c == max_c) as.character(min_c) else paste0(min_c, "-", max_c)
+      census <- as.character(census_counts$n_census[match(plot_ids, census_counts$PlotID)])
+
     } else {
       plot_ids  <- data$PlotID
       size      <- data$Size
@@ -104,11 +113,11 @@ make_plot_metadata <- function(country,
   pie <- paste(pie, collapse = "; ")
 
   result <- tibble::tibble(
-    Country   = matches$country.name.en,
+    Country = dplyr::coalesce(matches$un.name.en, matches$country.name.en),
     Site      = site,
     PI        = pi,
     PIe       = pie,
-    Dataset   = length(plot_ids),
+    # Dataset   = length(plot_ids),
     Censuses  = census,
     PlotID    = plot_ids,
     Size      = size,
