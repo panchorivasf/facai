@@ -9,7 +9,7 @@ add_plots(
   plot_data,
   color = "green",
   size = 4,
-  opacity = 0.7,
+  opacity = 0.9,
   group = "New - Received"
 )
 }
@@ -26,7 +26,7 @@ Must include columns: \code{Country}, \code{Site}, \code{PlotID},
 
 \item{size}{Numeric. Marker radius in pixels. Default \code{4}.}
 
-\item{opacity}{Numeric. Marker fill opacity, between 0 and 1. Default \code{0.7}.}
+\item{opacity}{Numeric. Marker fill opacity, between 0 and 1. Default \code{0.9}.}
 }
 \value{
 A leaflet map object with circle markers added.

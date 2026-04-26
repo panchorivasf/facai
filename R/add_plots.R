@@ -12,7 +12,7 @@
 #'   \code{Longitude}.
 #' @param color Character. Marker fill color. Default \code{"green"}.
 #' @param size Numeric. Marker radius in pixels. Default \code{4}.
-#' @param opacity Numeric. Marker fill opacity, between 0 and 1. Default \code{0.7}.
+#' @param opacity Numeric. Marker fill opacity, between 0 and 1. Default \code{0.9}.
 #'
 #' @return A leaflet map object with circle markers added.
 #'
@@ -29,7 +29,7 @@ add_plots <- function(map,
                       plot_data,
                       color = "green",
                       size = 4,
-                      opacity = 0.7,
+                      opacity = 0.9,
                       group = "New - Received"){
 
   Dataset <- nrow(plot_data)
@@ -54,7 +54,7 @@ add_plots <- function(map,
                      "Site: ", Site, " <br>",
                      "PI: ", PI, " <br>",
                      "PIe: ", PIe, " <br>",
-                     "Dataset size: ", Dataset, " plots <br>",
+                     "Dataset size: ", Dataset, ifelse(Dataset == 1, " plot <br>", " plots <br>"),
                      "Censuses: ", census_text, " <br>",
                      "PlotID: ", PlotID, " <br>",
                      "Plot Size: ", Size, " ha"),
