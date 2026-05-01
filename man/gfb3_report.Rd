@@ -8,8 +8,9 @@ gfb3_report(
   data,
   curation_log = NULL,
   plot_metadata = NULL,
-  export_pdf = FALSE,
-  export_xlsx = FALSE,
+  export_pdf = TRUE,
+  export_xlsx = TRUE,
+  export_map = TRUE,
   output_dir = ".",
   dataset_name = "data"
 )
@@ -38,11 +39,19 @@ Only the first occurrence of each PlotID is used (i.e. one row per plot).}
 
 \item{export_pdf}{Logical. If \code{TRUE}, a narrative PDF report is written
 to \code{output_dir}. Requires Python with \code{reportlab} installed.
-Default \code{FALSE}.}
+Default \code{TRUE}.}
 
 \item{export_xlsx}{Logical. If \code{TRUE}, an Excel workbook with diagnostic
 tables is written to \code{output_dir}. Requires Python with
-\code{openpyxl} installed. Default \code{FALSE}.}
+\code{openpyxl} installed. Default \code{TRUE}.}
+
+\item{export_map}{Logical. If \code{TRUE} and \code{plot_metadata} is
+supplied, a self-contained interactive HTML map
+(\code{<dataset_name>_plot_map.html}) is saved to \code{output_dir}.
+The HTML is fully interactive (pan, zoom) and self-contained in a single
+file. The PDF / Excel report always uses a static PNG of the same map
+regardless of this setting. Requires \pkg{htmlwidgets}.
+Default \code{TRUE}.}
 
 \item{output_dir}{Character. Directory where exported files are saved.
 Defaults to the current working directory.}
@@ -60,6 +69,25 @@ Runs a suite of diagnostic checks on a GFB3-formatted dataset and prints a
 structured report to the console. Optionally exports a narrative PDF report
 and/or an Excel workbook with diagnostic tables.
 }
+\section{Map export dependencies}{
+
+When \code{plot_metadata} is supplied and either \code{export_pdf} or
+\code{export_xlsx} is \code{TRUE}, \code{gfb3_report()} will attempt to
+render a Leaflet map screenshot using \pkg{leaflet}, \pkg{mapview}, and
+\pkg{webshot2} (which requires a headless Chromium browser). These packages
+are not installed with \pkg{facai} by default. Run
+\code{\link{facai_setup_map}()} once after installing the package to set
+everything up:
+
+\preformatted{
+facai_setup_map()
+}
+
+If these packages are not available, the map will fall back to a static
+\pkg{ggplot2} / \pkg{rnaturalearth} plot, and then to a base-R plot if
+those are also absent. The rest of the report is unaffected in all cases.
+}
+
 \examples{
 \dontrun{
 my_notes <- "
@@ -78,6 +106,7 @@ result <- gfb3_report(paracou_gfb3,
                       plot_metadata = meta,
                       export_pdf    = TRUE,
                       export_xlsx   = TRUE,
+                      export_map    = TRUE,
                       output_dir    = "reports/",
                       dataset_name  = "paracou_01")
 }
