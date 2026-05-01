@@ -172,14 +172,14 @@ gfb3_report <- function(data,
 
   # ── 9. Duplicate TreeID x YR ─────────────────────────────────────────────────
   n_dups <- dat |>
-    count(TreeID, YR) |>
+    count(PlotID, TreeID, YR) |>
     filter(n > 1) |>
     nrow()
 
   # ── 10. Dead trees with subsequent records ───────────────────────────────────
   n_zombie <- dat |>
-    arrange(TreeID, YR) |>
-    group_by(TreeID) |>
+    arrange(PlotID,TreeID, YR) |>
+    group_by(PlotID,TreeID) |>
     mutate(ever_dead = cumany(Status == "1")) |>
     filter(ever_dead, Status %in% c("0", "2")) |>
     nrow()
