@@ -209,8 +209,8 @@ gfb3_report <- function(data,
     )
   )
 
-  hard_fails <- c(n_dups, n_zombie)
-  soft_flags <- c(n_missing_dbh, n_small, n_neg_growth, n_fast)
+  hard_fails <- c(n_dups)  # remove n_zombie from critical threshold
+  soft_flags <- c(n_missing_dbh, n_small, n_neg_growth, n_fast, n_zombie)
 
   verdict <- dplyr::case_when(
     any(hard_fails > 0) ~ "FAIL: critical issues must be resolved before use.",
