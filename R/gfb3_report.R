@@ -24,10 +24,17 @@
 #'   Only the first occurrence of each PlotID is used (i.e. one row per plot).
 #' @param export_pdf Logical. If \code{TRUE}, a narrative PDF report is written
 #'   to \code{output_dir}. Requires Python with \code{reportlab} installed.
-#'   Default \code{FALSE}.
+#'   Default \code{TRUE}.
 #' @param export_xlsx Logical. If \code{TRUE}, an Excel workbook with diagnostic
 #'   tables is written to \code{output_dir}. Requires Python with
-#'   \code{openpyxl} installed. Default \code{FALSE}.
+#'   \code{openpyxl} installed. Default \code{TRUE}.
+#' @param export_map Logical. If \code{TRUE} and \code{plot_metadata} is
+#'   supplied, a self-contained interactive HTML map
+#'   (\code{<dataset_name>_plot_map.html}) is saved to \code{output_dir}.
+#'   The HTML is fully interactive (pan, zoom) and self-contained in a single
+#'   file. The PDF / Excel report always uses a static PNG of the same map
+#'   regardless of this setting. Requires \pkg{htmlwidgets}.
+#'   Default \code{TRUE}.
 #' @param output_dir Character. Directory where exported files are saved.
 #'   Defaults to the current working directory.
 #' @param dataset_name Character. Label used in export filenames and report
@@ -36,6 +43,23 @@
 #' @return Invisibly returns a named list with elements \code{status},
 #'   \code{dbh}, \code{growth}, \code{flags}, \code{curation_log}, and
 #'   \code{plot_metadata}.
+#'
+#' @section Map export dependencies:
+#' When \code{plot_metadata} is supplied and either \code{export_pdf} or
+#' \code{export_xlsx} is \code{TRUE}, \code{gfb3_report()} will attempt to
+#' render a Leaflet map screenshot using \pkg{leaflet}, \pkg{mapview}, and
+#' \pkg{webshot2} (which requires a headless Chromium browser). These packages
+#' are not installed with \pkg{facai} by default. Run
+#' \code{\link{facai_setup_map}()} once after installing the package to set
+#' everything up:
+#'
+#' \preformatted{
+#' facai_setup_map()
+#' }
+#'
+#' If these packages are not available, the map will fall back to a static
+#' \pkg{ggplot2} / \pkg{rnaturalearth} plot, and then to a base-R plot if
+#' those are also absent. The rest of the report is unaffected in all cases.
 #'
 #' @examples
 #' \dontrun{
@@ -55,6 +79,7 @@
 #'                       plot_metadata = meta,
 #'                       export_pdf    = TRUE,
 #'                       export_xlsx   = TRUE,
+#'                       export_map    = TRUE,
 #'                       output_dir    = "reports/",
 #'                       dataset_name  = "paracou_01")
 #' }
@@ -67,8 +92,9 @@
 gfb3_report <- function(data,
                         curation_log  = NULL,
                         plot_metadata = NULL,
-                        export_pdf    = FALSE,
-                        export_xlsx   = FALSE,
+                        export_pdf    = TRUE,
+                        export_xlsx   = TRUE,
+                        export_map    = TRUE,
                         output_dir    = ".",
                         dataset_name  = "data") {
 
@@ -270,7 +296,7 @@ gfb3_report <- function(data,
   }
 
   # ── EXPORTS ──────────────────────────────────────────────────────────────────
-  if (export_pdf || export_xlsx) {
+  if (export_pdf || export_xlsx || (export_map && !is.null(plot_meta_tbl))) {
     if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
 
     tmp_dir <- tempfile("gfb3_report_")
@@ -314,7 +340,27 @@ gfb3_report <- function(data,
 
       # Render static map PNG using ggplot2 + sf
       map_path <- file.path(tmp_dir, "plot_map.png")
-      .render_plot_map(plot_meta_tbl, map_path)
+      leaflet_map <- .render_plot_map(plot_meta_tbl, map_path)
+
+      if (export_map) {
+        if (!requireNamespace("htmlwidgets", quietly = TRUE)) {
+          cli::cli_alert_warning(
+            "export_map requires the {.pkg htmlwidgets} package. \\
+            Install it with {.code install.packages('htmlwidgets')}."
+          )
+        } else if (is.null(leaflet_map)) {
+          cli::cli_alert_warning(
+            "Interactive map could not be saved: Leaflet map object unavailable \\
+            (leaflet / mapview / webshot2 not installed). \\
+            Run {.fn facai_setup_map} to enable this feature."
+          )
+        } else {
+          html_path <- file.path(output_dir,
+                                 paste0(dataset_name, "_plot_map.html"))
+          htmlwidgets::saveWidget(leaflet_map, file = html_path, selfcontained = TRUE)
+          cli::cli_alert_success("Interactive map written to: {html_path}")
+        }
+      }
     }
 
     # Resolve Python executable
@@ -418,25 +464,42 @@ gfb3_report <- function(data,
   has_webshot2 <- requireNamespace("webshot2", quietly = TRUE)
 
   # ── Primary: Leaflet screenshot via mapshot2 ─────────────────────────────────
+  if (!has_leaflet || !has_mapview || !has_webshot2) {
+    missing_pkgs <- c(
+      if (!has_leaflet)  "leaflet",
+      if (!has_mapview)  "mapview",
+      if (!has_webshot2) "webshot2"
+    )
+    cli::cli_alert_info(
+      "Map export: {paste(missing_pkgs, collapse = ', ')} not found. \\
+      Run {.fn facai_setup_map} for a better Leaflet map; falling back to ggplot2."
+    )
+  }
+
   if (has_leaflet && has_mapview && has_webshot2) {
 
     m <- leaflet::leaflet(data = tbl) |>
-      leaflet::addProviderTiles(leaflet::providers$Esri.WorldTopoMap) |>
+      leaflet::addProviderTiles(leaflet::providers$Esri.WorldImagery) |>
+      leaflet::addTiles(
+        urlTemplate = "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+        options     = leaflet::tileOptions(opacity = 0.7)
+      ) |>
       leaflet::addCircleMarkers(
         lng         = ~Longitude,
         lat         = ~Latitude,
         radius      = 7,
-        color       = "#2E4057",
+        color       = "#FFFFFF",
         fillColor   = "#E84855",
         fillOpacity = 0.9,
         weight      = 1.5,
         opacity     = 1
       ) |>
       leaflet::fitBounds(
-        lng1 = min(tbl$Longitude),
-        lat1 = min(tbl$Latitude),
-        lng2 = max(tbl$Longitude),
-        lat2 = max(tbl$Latitude)
+        lng1    = min(tbl$Longitude),
+        lat1    = min(tbl$Latitude),
+        lng2    = max(tbl$Longitude),
+        lat2    = max(tbl$Latitude),
+        options = list(maxZoom = 13)
       )
 
     mapview::mapshot2(
@@ -447,7 +510,7 @@ gfb3_report <- function(data,
       zoom   = 1
     )
 
-    if (file.exists(path)) return(invisible(NULL))
+    if (file.exists(path)) return(invisible(m))
     # If mapshot2 silently failed, fall through to ggplot2 fallback
     cli::cli_alert_warning(
       "mapshot2 did not produce a file; falling back to ggplot2 map."
