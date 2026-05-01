@@ -15,14 +15,18 @@ make_plot_metadata(
   size = NULL,
   latitude = NULL,
   longitude = NULL,
-  export_xlsx = TRUE
+  export_xlsx = TRUE,
+  site_in_filename = FALSE,
+  filename = NULL
 )
 }
 \arguments{
 \item{country}{Character. Official UN country name (use \code{get_country_code()}
-to look up the correct name).}
+to look up the correct name). If \code{NA}, derived from a \code{Country}
+or \code{country} column in \code{data} (checked in that order).}
 
-\item{site}{Character. Site or forest name.}
+\item{site}{Character. Site or forest name. If \code{NA}, derived from a
+\code{Site} or \code{site} column in \code{data} (checked in that order).}
 
 \item{data}{A data frame. Accepts either a plot-level data frame with
 columns \code{PlotID}, \code{Size}, \code{Latitude}, \code{Longitude}, or
@@ -36,9 +40,8 @@ latter case \code{plot_ids}, \code{size}, \code{latitude},
 \item{pie}{Character. Email address of the principal investigator.}
 
 \item{census}{Character or numeric. Number of censuses (or range like
-\code{"2-3"}).Derived from \code{data} when provided.
- Required when \code{data} is \code{NULL}, otherwise derived from
- \code{YR}/\code{PrevYR}.}
+\code{"2-3"}). Derived from \code{data} when provided. Required when
+\code{data} is \code{NULL}, otherwise derived from \code{YR}/\code{PrevYR}.}
 
 \item{plot_ids}{Character vector. Vector of PlotIDs. Required when \code{data}
 is \code{NULL}, otherwise derived from \code{PlotID}.}
@@ -52,11 +55,20 @@ plots when \code{data} is \code{NULL}, otherwise derived.}
 \item{longitude}{Numeric. Longitude in decimal degrees. Scalar, applied to all
 plots when \code{data} is \code{NULL}, otherwise derived.}
 
-\item{export_xlsx}{Logical. Whether to export the table as .xlsx  file.}
+\item{export_xlsx}{Logical. Whether to export the table as .xlsx file.}
+
+\item{site_in_filename}{Logical. Whether to include the site name in the
+exported filename. Defaults to \code{TRUE}. Set to \code{FALSE} when
+\code{site} is derived from a column with multiple values and a clean
+country-level filename is preferred.}
+
+\item{filename}{Character. Optional. If provided, used directly as the
+output filename (with \code{.xlsx} appended if missing). Overrides
+\code{site_in_filename}.}
 }
 \value{
 A tibble with one row per plot and columns: \code{Country},
-  \code{Site}, \code{PI}, \code{PIe}, \code{Dataset}, \code{PlotID},
+  \code{Site}, \code{PI}, \code{PIe}, \code{Censuses}, \code{PlotID},
   \code{Size}, \code{Latitude}, \code{Longitude}.
 }
 \description{

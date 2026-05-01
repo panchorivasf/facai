@@ -67,7 +67,6 @@
 #' @importFrom jsonlite fromJSON write_json
 #' @importFrom DT datatable renderDT DTOutput formatStyle formatRound
 #'   styleEqual
-#' @export
 gfb3_converter <- function(launch.browser = TRUE) {
 
   # options(browser = "google-chrome")

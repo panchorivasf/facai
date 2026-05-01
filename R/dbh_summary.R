@@ -54,6 +54,14 @@ dbh_summary <- function(df,
                   mean = Mean, q3 = `3rd Qu.`, max = `Max.`) |>
     dplyr::mutate(dplyr::across(-c(min, max), \(x) round(x, 2)))
 
+  result <- result |>
+    mutate(min = round(min, 2),
+           q1 = round(q1, 2),
+           median = round(median,2),
+           mean = round(mean,2),
+           q3 = round(q3,2),
+           max = round(max,2))
+
   print(result)
 
   if (export) {

@@ -5,7 +5,9 @@
 \title{GFB3 Format Diagnostic Report}
 \usage{
 gfb3_report(
-  dat,
+  data,
+  curation_log = NULL,
+  plot_metadata = NULL,
   export_pdf = FALSE,
   export_xlsx = FALSE,
   output_dir = ".",
@@ -13,10 +15,26 @@ gfb3_report(
 )
 }
 \arguments{
-\item{dat}{A tibble in GFB3 format, as produced by \code{convert_paracou_gfb3()}
+\item{data}{A tibble in GFB3 format, as produced by \code{convert_paracou_gfb3()}
 or equivalent. Must contain columns: \code{PlotID}, \code{PA},
 \code{Latitude}, \code{Longitude}, \code{TreeID}, \code{Species},
 \code{Status}, \code{DBH}, \code{YR}, \code{PrevDBH}, \code{PrevYR}.}
+
+\item{curation_log}{Character string (or \code{NULL}). A free-text narrative
+describing the curation and data-wrangling decisions applied to the dataset
+before formatting (e.g., outlier removal, coordinate corrections, species
+name harmonisation). When provided, the notes are printed in the console
+report under a dedicated "Curation notes" section and, if exports are
+requested, written as a plain-text file (\code{curation_log.txt}) inside
+the temporary staging directory so that the Python export scripts can embed
+them in the PDF and/or Excel workbook. Default \code{NULL} (no notes).}
+
+\item{plot_metadata}{A tibble as returned by \code{make_plot_metadata()}, or
+\code{NULL} (default). When provided, plot-level metadata (Country, Site,
+PI, PIe, Censuses, PlotID, Size, Latitude, Longitude) are included in the
+console report and, if exports are requested, a "Plot Locations" section
+with a summary table and a static map is added to the PDF / Excel workbook.
+Only the first occurrence of each PlotID is used (i.e. one row per plot).}
 
 \item{export_pdf}{Logical. If \code{TRUE}, a narrative PDF report is written
 to \code{output_dir}. Requires Python with \code{reportlab} installed.
@@ -34,7 +52,8 @@ headers. Defaults to \code{"gfb3_dataset"}.}
 }
 \value{
 Invisibly returns a named list with elements \code{status},
-  \code{dbh}, \code{growth}, and \code{flags}.
+  \code{dbh}, \code{growth}, \code{flags}, \code{curation_log}, and
+  \code{plot_metadata}.
 }
 \description{
 Runs a suite of diagnostic checks on a GFB3-formatted dataset and prints a
@@ -43,11 +62,24 @@ and/or an Excel workbook with diagnostic tables.
 }
 \examples{
 \dontrun{
+my_notes <- "
+- Removed 14 stems with DBH < 1 cm (measurement artefacts confirmed by field team).
+- Corrected plot coordinates for PA 07 (GPS drift in 2018 census; adjusted to match
+  2014 reference positions).
+- Harmonised species names against the TNRS database; 32 morphospecies retained as-is.
+- Status recoded from local 3-class scheme (V/M/R) to GFB3 (0/1/2).
+"
+
+meta <- make_plot_metadata(data = my_gfb3, pi = "Jane Smith",
+                           pie = "j.smith@uni.edu")
+
 result <- gfb3_report(paracou_gfb3,
-                              export_pdf  = TRUE,
-                              export_xlsx = TRUE,
-                              output_dir  = "reports/",
-                              dataset_name = "paracou_01")
+                      curation_log  = my_notes,
+                      plot_metadata = meta,
+                      export_pdf    = TRUE,
+                      export_xlsx   = TRUE,
+                      output_dir    = "reports/",
+                      dataset_name  = "paracou_01")
 }
 
 }

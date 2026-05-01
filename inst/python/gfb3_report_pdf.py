@@ -3,7 +3,8 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table,
-                                  TableStyle, HRFlowable, Image, KeepTogether)
+                                  TableStyle, HRFlowable, Image, KeepTogether,
+                                  PageBreak)
 
 tmp_dir  = sys.argv[1]
 out_path = sys.argv[2]
@@ -18,9 +19,14 @@ flags   = read_csv("flags.csv")
 dbh     = read_csv("dbh.csv")
 growth  = read_csv("growth.csv")
 
+# Plot metadata is optional — only loaded when the file exists
+plot_meta_path = os.path.join(tmp_dir, "plot_metadata.csv")
+plot_meta = read_csv("plot_metadata.csv") if os.path.exists(plot_meta_path) else None
+
 doc    = SimpleDocTemplate(out_path, pagesize=letter,
                             leftMargin=72, rightMargin=72,
-                            topMargin=72, bottomMargin=72)
+                            topMargin=72, bottomMargin=72,
+                            title = "GFB3 Report")
 styles = getSampleStyleSheet()
 
 # ── Styles ───────────────────────────────────────────────────────────────────
@@ -30,7 +36,8 @@ h1 = ParagraphStyle("h1", parent=styles["Heading1"],
 h2 = ParagraphStyle("h2", parent=styles["Heading2"],
                     fontSize=12, textColor=colors.HexColor("#2E4057"),
                     spaceBefore=14, spaceAfter=4)
-body = styles["Normal"]
+body  = styles["Normal"]
+small = ParagraphStyle("small", parent=styles["Normal"], fontSize=8)
 
 def tbl_style(header_color="#2E4057"):
     return TableStyle([
@@ -57,18 +64,82 @@ story.append(HRFlowable(width="100%", thickness=1,
 story.append(Spacer(1, 12))
 
 # ── Overview ─────────────────────────────────────────────────────────────────
-overview_text = (
-    f"This report summarises the diagnostic results for the <b>{meta['dataset_name']}</b> "
-    f"dataset formatted to GFB3 standard. The dataset contains <b>{int(meta['n_rows']):,}</b> "
-    f"rows across <b>{meta['n_plots']}</b> plot(s), representing "
-    f"<b>{int(meta['n_trees']):,}</b> individual stems censused between "
-    f"<b>{meta['yr_min']}</b> and <b>{meta['yr_max']}</b>."
-)
+# Pull country / site info from plot_meta when available for a richer overview
+if plot_meta:
+    countries   = sorted(set(r["Country"] for r in plot_meta if r.get("Country")))
+    sites       = sorted(set(r["Site"]    for r in plot_meta if r.get("Site")))
+    country_str = ", ".join(countries) if countries else "—"
+    site_str    = ", ".join(sites)     if sites    else "—"
+    # When we have plot metadata the country/site replaces the generic "N plot(s)" phrase
+    overview_text = (
+        f"This report summarises the diagnostic results for the <b>{meta['dataset_name']}</b> "
+        f"dataset formatted to GFB3 standard. The dataset contains <b>{int(meta['n_rows']):,}</b> "
+        f"rows representing <b>{int(meta['n_trees']):,}</b> individual stems censused between "
+        f"<b>{meta['yr_min']}</b> and <b>{meta['yr_max']}</b>, across "
+        f"<b>{meta['n_plots']}</b> plot(s) in <b>{country_str}</b> (site: {site_str})."
+    )
+else:
+    overview_text = (
+        f"This report summarises the diagnostic results for the <b>{meta['dataset_name']}</b> "
+        f"dataset formatted to GFB3 standard. The dataset contains <b>{int(meta['n_rows']):,}</b> "
+        f"rows across <b>{meta['n_plots']}</b> plot(s), representing "
+        f"<b>{int(meta['n_trees']):,}</b> individual stems censused between "
+        f"<b>{meta['yr_min']}</b> and <b>{meta['yr_max']}</b>."
+    )
 story.append(KeepTogether([
     Paragraph("Overview", h2),
     Paragraph(overview_text, body),
     Spacer(1, 10),
 ]))
+
+# ── Plot Locations (only when plot_metadata was supplied) ────────────────────
+if plot_meta:
+    # Decide which columns to show and their display widths.
+    # Long columns (PlotID, Site) get more space; coords get less.
+    display_cols   = ["Country", "Site", "PlotID", "PI", "Censuses",
+                      "Size", "Latitude", "Longitude"]
+    col_widths_map = {
+        "Country":   52,
+        "Site":      80,
+        "PlotID":    90,
+        "PI":        80,
+        "PIe":       90,
+        "Censuses":  52,
+        "Size":      36,
+        "Latitude":  52,
+        "Longitude": 52,
+    }
+    # Keep only columns that actually exist in the data
+    display_cols = [c for c in display_cols if c in (plot_meta[0].keys())]
+    col_widths   = [col_widths_map.get(c, 60) for c in display_cols]
+
+    pm_data = [display_cols] + [
+        [r.get(c, "") for c in display_cols] for r in plot_meta
+    ]
+    pm_tbl = Table(pm_data, colWidths=col_widths, splitByRow=True)
+    pm_tbl.setStyle(tbl_style())
+
+    map_path = os.path.join(tmp_dir, "plot_map.png")
+    pm_block = [
+        Paragraph("Plot Locations", h2),
+        Paragraph(
+            "The table below lists the unique plots included in this dataset. "
+            "Coordinates are in decimal degrees (WGS84). "
+            "Size is in hectares; Censuses reports the number of inventories "
+            "per plot.", body),
+        Spacer(1, 6),
+        pm_tbl,
+    ]
+    if os.path.exists(map_path):
+        pm_block += [
+            Spacer(1, 10),
+            Paragraph(
+                "The map below shows the geographic distribution of the plots.", body),
+            Spacer(1, 6),
+            Image(map_path, width=450, height=321),
+        ]
+    pm_block.append(Spacer(1, 10))
+    story.append(KeepTogether(pm_block))
 
 # ── Status Distribution ───────────────────────────────────────────────────────
 s_data = [["Status", "Label", "Count", "Pct (%)"]] + [
@@ -165,5 +236,21 @@ story.append(KeepTogether([
     Paragraph("Verdict", h2),
     Paragraph(f'<font color="{vcolor}"><b>{verdict}</b></font>', body),
 ]))
+
+# ── Curation Log ─────────────────────────────────────────────────────────────
+notes_path = os.path.join(tmp_dir, "curation_log.txt")
+if os.path.exists(notes_path):
+    with open(notes_path, "r", encoding="utf-8") as f:
+        notes_text = f.read().strip()
+
+    if notes_text:
+        notes_paras = [Paragraph("Curation Log", h2)]
+        for line in notes_text.splitlines():
+            if line.strip():
+                notes_paras.append(Paragraph(line, body))
+            else:
+                notes_paras.append(Spacer(1, 4))
+        notes_paras.append(Spacer(1, 10))
+        story.append(KeepTogether(notes_paras))
 
 doc.build(story)

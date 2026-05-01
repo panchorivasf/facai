@@ -54,12 +54,12 @@ growth_summary <- function(df, export = FALSE,
       n_negative = sum(DBHdiff < 0,  na.rm = TRUE),
       n_positive = sum(DBHdiff > 0,  na.rm = TRUE),
       mean       = round(mean(DBHdiff,     na.rm = TRUE),2),
-      median     = median(DBHdiff,   na.rm = TRUE),
+      median     = round(median(DBHdiff,   na.rm = TRUE),2),
       sd         = round(sd(DBHdiff,       na.rm = TRUE),2),
-      q25        = quantile(DBHdiff, 0.25, na.rm = TRUE),
-      q75        = quantile(DBHdiff, 0.75, na.rm = TRUE),
-      min        = min(DBHdiff,      na.rm = TRUE),
-      max        = max(DBHdiff,      na.rm = TRUE)
+      q25        = round(quantile(DBHdiff, 0.25, na.rm = TRUE),2),
+      q75        = round(quantile(DBHdiff, 0.75, na.rm = TRUE),2),
+      min        = round(min(DBHdiff,      na.rm = TRUE),2),
+      max        = round(max(DBHdiff,      na.rm = TRUE),2)
     )
 
   print(summary_tbl)

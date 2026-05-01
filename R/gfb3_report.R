@@ -4,10 +4,24 @@
 #' structured report to the console. Optionally exports a narrative PDF report
 #' and/or an Excel workbook with diagnostic tables.
 #'
-#' @param dat A tibble in GFB3 format, as produced by \code{convert_paracou_gfb3()}
+#' @param data A tibble in GFB3 format, as produced by \code{convert_paracou_gfb3()}
 #'   or equivalent. Must contain columns: \code{PlotID}, \code{PA},
 #'   \code{Latitude}, \code{Longitude}, \code{TreeID}, \code{Species},
 #'   \code{Status}, \code{DBH}, \code{YR}, \code{PrevDBH}, \code{PrevYR}.
+#' @param curation_log Character string (or \code{NULL}). A free-text narrative
+#'   describing the curation and data-wrangling decisions applied to the dataset
+#'   before formatting (e.g., outlier removal, coordinate corrections, species
+#'   name harmonisation). When provided, the notes are printed in the console
+#'   report under a dedicated "Curation notes" section and, if exports are
+#'   requested, written as a plain-text file (\code{curation_log.txt}) inside
+#'   the temporary staging directory so that the Python export scripts can embed
+#'   them in the PDF and/or Excel workbook. Default \code{NULL} (no notes).
+#' @param plot_metadata A tibble as returned by \code{make_plot_metadata()}, or
+#'   \code{NULL} (default). When provided, plot-level metadata (Country, Site,
+#'   PI, PIe, Censuses, PlotID, Size, Latitude, Longitude) are included in the
+#'   console report and, if exports are requested, a "Plot Locations" section
+#'   with a summary table and a static map is added to the PDF / Excel workbook.
+#'   Only the first occurrence of each PlotID is used (i.e. one row per plot).
 #' @param export_pdf Logical. If \code{TRUE}, a narrative PDF report is written
 #'   to \code{output_dir}. Requires Python with \code{reportlab} installed.
 #'   Default \code{FALSE}.
@@ -20,33 +34,50 @@
 #'   headers. Defaults to \code{"gfb3_dataset"}.
 #'
 #' @return Invisibly returns a named list with elements \code{status},
-#'   \code{dbh}, \code{growth}, and \code{flags}.
+#'   \code{dbh}, \code{growth}, \code{flags}, \code{curation_log}, and
+#'   \code{plot_metadata}.
 #'
 #' @examples
 #' \dontrun{
+#' my_notes <- "
+#' - Removed 14 stems with DBH < 1 cm (measurement artefacts confirmed by field team).
+#' - Corrected plot coordinates for PA 07 (GPS drift in 2018 census; adjusted to match
+#'   2014 reference positions).
+#' - Harmonised species names against the TNRS database; 32 morphospecies retained as-is.
+#' - Status recoded from local 3-class scheme (V/M/R) to GFB3 (0/1/2).
+#' "
+#'
+#' meta <- make_plot_metadata(data = my_gfb3, pi = "Jane Smith",
+#'                            pie = "j.smith@uni.edu")
+#'
 #' result <- gfb3_report(paracou_gfb3,
-#'                               export_pdf  = TRUE,
-#'                               export_xlsx = TRUE,
-#'                               output_dir  = "reports/",
-#'                               dataset_name = "paracou_01")
+#'                       curation_log  = my_notes,
+#'                       plot_metadata = meta,
+#'                       export_pdf    = TRUE,
+#'                       export_xlsx   = TRUE,
+#'                       output_dir    = "reports/",
+#'                       dataset_name  = "paracou_01")
 #' }
 #'
 #' @importFrom dplyr count mutate select filter summarise pull arrange group_by
 #'   ungroup n_distinct distinct left_join cumany
 #' @importFrom cli cli_h1 cli_h2 cli_bullets cli_alert_warning cli_alert_success
-#'   cli_alert_danger
+#'   cli_alert_danger cli_verbatim
 #' @export
-gfb3_report <- function(dat,
-                        export_pdf   = FALSE,
-                        export_xlsx  = FALSE,
-                        output_dir   = ".",
-                        dataset_name = "data") {
+gfb3_report <- function(data,
+                        curation_log  = NULL,
+                        plot_metadata = NULL,
+                        export_pdf    = FALSE,
+                        export_xlsx   = FALSE,
+                        output_dir    = ".",
+                        dataset_name  = "data") {
 
+  dat <- data
   # ── 1. Basic counts ──────────────────────────────────────────────────────────
   n_rows   <- nrow(dat)
   n_trees  <- n_distinct(dat$TreeID)
   n_plots  <- n_distinct(dat$PlotID)
-  yr_range <- range(dat$YR, na.rm = TRUE)
+  yr_range <- range(c(dat$YR, dat$PrevYR), na.rm = TRUE)
 
   # ── 2. Status distribution ───────────────────────────────────────────────────
   status_labels <- c(
@@ -82,6 +113,7 @@ gfb3_report <- function(dat,
   ))
   dev.off()
   dbh_sum <- capture.output(print(dbh_sum_obj))
+
   # ── 5. Growth summary ────────────────────────────────────────────────────────
   hist_path <- tempfile("growth_hist_", fileext = ".png")
   png(hist_path, width = 600, height = 400, res = 96)
@@ -90,7 +122,6 @@ gfb3_report <- function(dat,
   ))
   dev.off()
   growth_sum <- capture.output(print(growth_sum_obj))
-
 
   # ── 6. Negative / zero growth ────────────────────────────────────────────────
   n_neg_growth <- dat |>
@@ -161,6 +192,24 @@ gfb3_report <- function(dat,
     TRUE                ~ "PASS: dataset looks clean."
   )
 
+  # ── 11. Plot metadata (one row per PlotID) ───────────────────────────────────
+  plot_meta_tbl <- NULL
+  if (!is.null(plot_metadata)) {
+    expected_cols <- c("Country", "Site", "PI", "PIe",
+                       "Censuses", "PlotID", "Size", "Latitude", "Longitude")
+    missing_cols <- setdiff(expected_cols, names(plot_metadata))
+    if (length(missing_cols) > 0) {
+      cli::cli_alert_warning(
+        "plot_metadata is missing columns: {paste(missing_cols, collapse = ', ')}. \\
+        Ignoring plot_metadata."
+      )
+    } else {
+      plot_meta_tbl <- plot_metadata |>
+        distinct(PlotID, .keep_all = TRUE) |>
+        select(all_of(expected_cols))
+    }
+  }
+
   # ── CONSOLE REPORT ───────────────────────────────────────────────────────────
   cli::cli_h1("GFB3 Format Diagnostic Report")
 
@@ -172,6 +221,18 @@ gfb3_report <- function(dat,
     "*" = "Plots: {n_plots}",
     "*" = "Year range: {yr_range[1]} - {yr_range[2]}"
   ))
+
+  # ── Curation notes (printed only when provided) ──────────────────────────────
+  if (!is.null(curation_log) && nzchar(trimws(curation_log))) {
+    cli::cli_h2("Curation notes")
+    cli::cli_verbatim(curation_log)
+  }
+
+  # ── Plot metadata (printed only when provided) ───────────────────────────────
+  if (!is.null(plot_meta_tbl)) {
+    cli::cli_h2("Plot Locations")
+    print(plot_meta_tbl)
+  }
 
   cli::cli_h2("Status Distribution")
   print(status_tbl)
@@ -228,7 +289,6 @@ gfb3_report <- function(dat,
     file.copy(hist_path,     file.path(tmp_dir, "growth_hist.png"))
     file.copy(dbh_hist_path, file.path(tmp_dir, "dbh_hist.png"))
 
-
     meta <- data.frame(
       key   = c("dataset_name", "n_rows", "n_trees", "n_plots",
                 "yr_min", "yr_max", "verdict"),
@@ -236,6 +296,26 @@ gfb3_report <- function(dat,
                 yr_range[1], yr_range[2], verdict)
     )
     readr::write_csv(meta, file.path(tmp_dir, "meta.csv"))
+
+    # Write curation notes (empty string when NULL so Python scripts can always
+    # read the file without extra existence checks)
+    notes_text <- if (!is.null(curation_log)) curation_log else ""
+    writeLines(notes_text, file.path(tmp_dir, "curation_log.txt"))
+
+    # ── Plot metadata export ────────────────────────────────────────────────────
+    if (!is.null(plot_meta_tbl)) {
+      # Round coordinates to 2 dp for display in the exported table
+      plot_meta_export <- plot_meta_tbl |>
+        dplyr::mutate(
+          Latitude  = round(Latitude,  2),
+          Longitude = round(Longitude, 2)
+        )
+      readr::write_csv(plot_meta_export, file.path(tmp_dir, "plot_metadata.csv"))
+
+      # Render static map PNG using ggplot2 + sf
+      map_path <- file.path(tmp_dir, "plot_map.png")
+      .render_plot_map(plot_meta_tbl, map_path)
+    }
 
     # Resolve Python executable
     python <- Sys.which("python")
@@ -297,10 +377,12 @@ gfb3_report <- function(dat,
 
   # ── RETURN ───────────────────────────────────────────────────────────────────
   invisible(list(
-    status = status_tbl,
-    dbh    = dbh_sum_obj,
-    growth = growth_sum_obj,
-    flags  = list(
+    status        = status_tbl,
+    dbh           = dbh_sum_obj,
+    growth        = growth_sum_obj,
+    curation_log  = curation_log,
+    plot_metadata = plot_meta_tbl,
+    flags = list(
       missing_dbh     = n_missing_dbh,
       missing_prevdbh = n_missing_prevdbh,
       missing_species = n_missing_species,
@@ -312,4 +394,117 @@ gfb3_report <- function(dat,
       zombies         = n_zombie
     )
   ))
+}
+
+
+# ── Internal helper: render static plot-location map ─────────────────────────
+#
+# Renders a Leaflet map and saves it as a PNG screenshot using mapview::mapshot2
+# (which drives a headless Chromium via webshot2). No labels on the map —
+# plot locations are shown as plain circle markers only.
+#
+# Tile provider: Esri.WorldTopoMap (no API key; reliable; looks great).
+#
+# Falls back to an rnaturalearth ggplot2 map if mapview / webshot2 are not
+# installed, and to base-R as a last resort.
+#
+# @param tbl  One-row-per-plot tibble with Latitude, Longitude columns.
+# @param path Output PNG path (must end in .png).
+# @noRd
+.render_plot_map <- function(tbl, path) {
+
+  has_leaflet  <- requireNamespace("leaflet",  quietly = TRUE)
+  has_mapview  <- requireNamespace("mapview",  quietly = TRUE)
+  has_webshot2 <- requireNamespace("webshot2", quietly = TRUE)
+
+  # ── Primary: Leaflet screenshot via mapshot2 ─────────────────────────────────
+  if (has_leaflet && has_mapview && has_webshot2) {
+
+    m <- leaflet::leaflet(data = tbl) |>
+      leaflet::addProviderTiles(leaflet::providers$Esri.WorldTopoMap) |>
+      leaflet::addCircleMarkers(
+        lng         = ~Longitude,
+        lat         = ~Latitude,
+        radius      = 7,
+        color       = "#2E4057",
+        fillColor   = "#E84855",
+        fillOpacity = 0.9,
+        weight      = 1.5,
+        opacity     = 1
+      ) |>
+      leaflet::fitBounds(
+        lng1 = min(tbl$Longitude),
+        lat1 = min(tbl$Latitude),
+        lng2 = max(tbl$Longitude),
+        lat2 = max(tbl$Latitude)
+      )
+
+    mapview::mapshot2(
+      x      = m,
+      file   = path,
+      vwidth = 900,
+      vheight = 600,
+      zoom   = 1
+    )
+
+    if (file.exists(path)) return(invisible(NULL))
+    # If mapshot2 silently failed, fall through to ggplot2 fallback
+    cli::cli_alert_warning(
+      "mapshot2 did not produce a file; falling back to ggplot2 map."
+    )
+  }
+
+  # ── Fallback 1: rnaturalearth + ggplot2 (no tile, no labels) ─────────────────
+  has_gg  <- requireNamespace("ggplot2",       quietly = TRUE)
+  has_rne <- requireNamespace("rnaturalearth", quietly = TRUE)
+  has_sf  <- requireNamespace("sf",            quietly = TRUE)
+
+  lat_range <- range(tbl$Latitude,  na.rm = TRUE)
+  lon_range <- range(tbl$Longitude, na.rm = TRUE)
+  pad       <- max(2, diff(lat_range) * 0.3, diff(lon_range) * 0.3)
+  xlim      <- c(lon_range[1] - pad, lon_range[2] + pad)
+  ylim      <- c(lat_range[1] - pad, lat_range[2] + pad)
+
+  if (has_gg && has_rne && has_sf) {
+    world  <- rnaturalearth::ne_countries(scale = "medium", returnclass = "sf")
+    pts_sf <- sf::st_as_sf(tbl,
+                           coords = c("Longitude", "Latitude"),
+                           crs    = 4326)
+    p <- ggplot2::ggplot() +
+      ggplot2::geom_sf(data      = world,
+                       fill      = "#EAE7DC",
+                       color     = "#AAAAAA",
+                       linewidth = 0.25) +
+      ggplot2::geom_sf(data        = pts_sf,
+                       color       = "#2E4057",
+                       fill        = "#E84855",
+                       shape       = 21,
+                       size        = 3,
+                       stroke      = 0.8) +
+      ggplot2::coord_sf(xlim = xlim, ylim = ylim, expand = FALSE) +
+      ggplot2::labs(x = "Longitude", y = "Latitude") +
+      ggplot2::theme_minimal(base_size = 9) +
+      ggplot2::theme(
+        panel.background = ggplot2::element_rect(fill = "#C8E6F5", color = NA),
+        panel.grid       = ggplot2::element_line(color = "#CCCCCC66",
+                                                 linewidth = 0.2)
+      )
+    png(path, width = 700, height = 480, res = 96)
+    on.exit(dev.off(), add = TRUE)
+    print(p)
+    return(invisible(NULL))
+  }
+
+  # ── Fallback 2: base-R ────────────────────────────────────────────────────────
+  png(path, width = 700, height = 480, res = 96)
+  on.exit(dev.off(), add = TRUE)
+  plot(tbl$Longitude, tbl$Latitude,
+       xlim = xlim, ylim = ylim,
+       pch  = 21, bg = "#E84855", col = "#2E4057", cex = 1.4,
+       xlab = "Longitude", ylab = "Latitude",
+       main = "Plot Locations")
+  if (requireNamespace("maps", quietly = TRUE))
+    maps::map("world", add = TRUE, col = "#AAAAAA")
+
+  invisible(NULL)
 }

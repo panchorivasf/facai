@@ -9,7 +9,6 @@
 #' @param launch.browser Logical; whether to open the app in a browser (default TRUE).
 #'
 #' @return Called for its side effect (launches the app). Returns invisibly.
-#' @export
 #'
 #' @examples
 #' \dontrun{
