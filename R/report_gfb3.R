@@ -8,6 +8,7 @@
 #'   or equivalent. Must contain columns: \code{PlotID}, \code{PA},
 #'   \code{Latitude}, \code{Longitude}, \code{TreeID}, \code{Species},
 #'   \code{Status}, \code{DBH}, \code{YR}, \code{PrevDBH}, \code{PrevYR}.
+#'   DBH is assumed to be in centimetres.
 #' @param curation_log Character string (or \code{NULL}). A free-text narrative
 #'   describing the curation and data-wrangling decisions applied to the dataset
 #'   before formatting (e.g., outlier removal, coordinate corrections, species
@@ -24,29 +25,38 @@
 #'   Only the first occurrence of each PlotID is used (i.e. one row per plot).
 #' @param export_pdf Logical. If \code{TRUE}, a narrative PDF report is written
 #'   to \code{output_dir}. Requires Python with \code{reportlab} installed.
-#'   Default \code{TRUE}.
+#'   Default \code{FALSE}.
 #' @param export_xlsx Logical. If \code{TRUE}, an Excel workbook with diagnostic
 #'   tables is written to \code{output_dir}. Requires Python with
-#'   \code{openpyxl} installed. Default \code{TRUE}.
+#'   \code{openpyxl} installed. Default \code{FALSE}.
 #' @param export_map Logical. If \code{TRUE} and \code{plot_metadata} is
 #'   supplied, a self-contained interactive HTML map
 #'   (\code{<dataset_name>_plot_map.html}) is saved to \code{output_dir}.
 #'   The HTML is fully interactive (pan, zoom) and self-contained in a single
 #'   file. The PDF / Excel report always uses a static PNG of the same map
 #'   regardless of this setting. Requires \pkg{htmlwidgets}.
-#'   Default \code{TRUE}.
+#'   Default \code{FALSE}.
 #' @param output_dir Character. Directory where exported files are saved.
 #'   Defaults to the current working directory.
 #' @param dataset_name Character. Label used in export filenames and report
 #'   headers. Defaults to \code{"gfb3_dataset"}.
 #'
 #' @return Invisibly returns a named list with elements \code{status},
-#'   \code{dbh}, \code{growth}, \code{flags}, \code{curation_log}, and
-#'   \code{plot_metadata}.
+#'   \code{ba}, \code{dbh}, \code{growth}, \code{flags}, \code{curation_log},
+#'   and \code{plot_metadata}.
+#'
+#' @section Basal area diagnostics:
+#' Stand basal area (BA) is computed per plot x census combination as the sum
+#' of cross-sectional areas of all live trees (\code{Status == "0"}) divided by
+#' plot area (\code{PA}, in hectares). DBH is assumed to be in centimetres:
+#' \deqn{BA = \sum \pi (DBH / 200)^2 \; / \; PA}
+#' Plot x census combinations with \eqn{60 \le BA < 100} m\eqn{^2}/ha are
+#' flagged as warnings ("higher than typical"); those with \eqn{BA \ge 100}
+#' m\eqn{^2}/ha are flagged as critical failures ("implausible BA").
 #'
 #' @section Map export dependencies:
 #' When \code{plot_metadata} is supplied and either \code{export_pdf} or
-#' \code{export_xlsx} is \code{TRUE}, \code{gfb3_report()} will attempt to
+#' \code{export_xlsx} is \code{TRUE}, \code{report_gfb3()} will attempt to
 #' render a Leaflet map screenshot using \pkg{leaflet}, \pkg{mapview}, and
 #' \pkg{webshot2} (which requires a headless Chromium browser). These packages
 #' are not installed with \pkg{facai} by default. Run
@@ -74,7 +84,7 @@
 #' meta <- make_plot_metadata(data = my_gfb3, pi = "Jane Smith",
 #'                            pie = "j.smith@uni.edu")
 #'
-#' result <- gfb3_report(paracou_gfb3,
+#' result <- report_gfb3(paracou_gfb3,
 #'                       curation_log  = my_notes,
 #'                       plot_metadata = meta,
 #'                       export_pdf    = TRUE,
@@ -85,20 +95,21 @@
 #' }
 #'
 #' @importFrom dplyr count mutate select filter summarise pull arrange group_by
-#'   ungroup n_distinct distinct left_join cumany
+#'   ungroup n_distinct distinct left_join cumany first
 #' @importFrom cli cli_h1 cli_h2 cli_bullets cli_alert_warning cli_alert_success
 #'   cli_alert_danger cli_verbatim
 #' @export
-gfb3_report <- function(data,
+report_gfb3 <- function(data,
                         curation_log  = NULL,
                         plot_metadata = NULL,
-                        export_pdf    = TRUE,
-                        export_xlsx   = TRUE,
-                        export_map    = TRUE,
+                        export_pdf    = FALSE,
+                        export_xlsx   = FALSE,
+                        export_map    = FALSE,
                         output_dir    = ".",
                         dataset_name  = "data") {
 
   dat <- data
+
   # ── 1. Basic counts ──────────────────────────────────────────────────────────
   n_rows   <- nrow(dat)
   n_trees  <- n_distinct(dat$TreeID)
@@ -170,16 +181,38 @@ gfb3_report <- function(data,
   # ── 8. DBH < 10 cm ───────────────────────────────────────────────────────────
   n_small <- sum(dat$DBH < 10, na.rm = TRUE)
 
-  # ── 9. Duplicate TreeID x YR ─────────────────────────────────────────────────
+  # ── 9. Basal area per plot x census ──────────────────────────────────────────
+  # DBH in cm: radius in m = DBH / (2 * 100) = DBH / 200
+  # BA (m2/ha) = sum(pi * (DBH / 200)^2) / PA
+  ba_tbl <- dat |>
+    filter(Status == "0", !is.na(DBH), !is.na(PA), PA > 0) |>
+    group_by(PlotID, YR) |>
+    summarise(
+      BA = sum(pi * (DBH / 200)^2, na.rm = TRUE) / first(PA),
+      .groups = "drop"
+    ) |>
+    mutate(
+      BA      = round(BA, 3),
+      BA_flag = case_when(
+        BA >= 100 ~ "critical",
+        BA >= 60  ~ "warning",
+        TRUE      ~ "ok"
+      )
+    )
+
+  n_ba_warning  <- sum(ba_tbl$BA_flag == "warning")
+  n_ba_critical <- sum(ba_tbl$BA_flag == "critical")
+
+  # ── 10. Duplicate TreeID x YR ────────────────────────────────────────────────
   n_dups <- dat |>
     count(PlotID, TreeID, YR, Status) |>
     filter(n > 1) |>
     nrow()
 
-  # ── 10. Dead trees with subsequent records ───────────────────────────────────
+  # ── 11. Dead trees with subsequent records ───────────────────────────────────
   n_zombie <- dat |>
-    arrange(PlotID,TreeID, YR) |>
-    group_by(PlotID,TreeID) |>
+    arrange(PlotID, TreeID, YR) |>
+    group_by(PlotID, TreeID) |>
     mutate(ever_dead = cumany(Status == "1")) |>
     filter(ever_dead, Status %in% c("0", "2")) |>
     nrow()
@@ -195,22 +228,26 @@ gfb3_report <- function(data,
       "Zero DBH growth",
       "Annual growth > 5 cm/yr",
       "Duplicate TreeID x YR",
-      "Zombie trees (alive after death)"
+      "Zombie trees (alive after death)",
+      "BA 60-100 m2/ha (higher than typical)",
+      "BA >= 100 m2/ha (implausible)"
     ),
     Count = c(
       n_missing_dbh, n_missing_prevdbh, n_missing_species,
       n_small, n_neg_growth, n_zero_growth, n_fast,
-      n_dups, n_zombie
+      n_dups, n_zombie,
+      n_ba_warning, n_ba_critical
     ),
     Severity = c(
       "warning", "info", "warning",
       "warning", "warning", "info", "warning",
-      "critical", "critical"
+      "critical", "critical",
+      "warning", "critical"
     )
   )
 
-  hard_fails <- c(n_dups)  # remove n_zombie from critical threshold
-  soft_flags <- c(n_missing_dbh, n_small, n_neg_growth, n_fast, n_zombie)
+  hard_fails <- c(n_dups, n_ba_critical)
+  soft_flags <- c(n_missing_dbh, n_small, n_neg_growth, n_fast, n_zombie, n_ba_warning)
 
   verdict <- dplyr::case_when(
     any(hard_fails > 0) ~ "FAIL: critical issues must be resolved before use.",
@@ -218,7 +255,7 @@ gfb3_report <- function(data,
     TRUE                ~ "PASS: dataset looks clean."
   )
 
-  # ── 11. Plot metadata (one row per PlotID) ───────────────────────────────────
+  # ── 12. Plot metadata (one row per PlotID) ───────────────────────────────────
   plot_meta_tbl <- NULL
   if (!is.null(plot_metadata)) {
     expected_cols <- c("Country", "Site", "PI", "PIe",
@@ -250,10 +287,10 @@ gfb3_report <- function(data,
   )
 
   if (!is.null(plot_meta_tbl)) {
-    country   <- paste(unique(plot_meta_tbl$Country), collapse = ", ")
-    sites     <- paste(unique(plot_meta_tbl$Site),    collapse = ", ")
-    pi_name   <- paste(unique(plot_meta_tbl$PI),      collapse = ", ")
-    pi_email  <- paste(unique(plot_meta_tbl$PIe),     collapse = ", ")
+    country  <- paste(unique(plot_meta_tbl$Country), collapse = ", ")
+    sites    <- paste(unique(plot_meta_tbl$Site),    collapse = ", ")
+    pi_name  <- paste(unique(plot_meta_tbl$PI),      collapse = ", ")
+    pi_email <- paste(unique(plot_meta_tbl$PIe),     collapse = ", ")
 
     overview_bullets <- c(
       overview_bullets,
@@ -265,6 +302,7 @@ gfb3_report <- function(data,
   }
 
   cli::cli_bullets(overview_bullets)
+
   # ── Curation notes (printed only when provided) ──────────────────────────────
   if (!is.null(curation_log) && nzchar(trimws(curation_log))) {
     cli::cli_h2("Curation notes")
@@ -286,6 +324,14 @@ gfb3_report <- function(data,
   cli::cli_h2("Growth Summary")
   cat(growth_sum, sep = "\n")
 
+  cli::cli_h2("Basal Area by Plot x Census")
+  ba_flagged <- ba_tbl |> filter(BA_flag != "ok")
+  if (nrow(ba_flagged) == 0) {
+    cli::cli_alert_success("All plot x census BA values are within the expected range (< 60 m2/ha).")
+  } else {
+    print(ba_flagged)
+  }
+
   cli::cli_h2("Data Quality Flags")
 
   flag <- function(n, msg, warn_thresh = 0) {
@@ -302,6 +348,8 @@ gfb3_report <- function(data,
   flag(n_fast,            "rows with annual growth > 5 cm/yr (possible errors)")
   flag(n_dups,            "duplicate TreeID x YR combinations")
   flag(n_zombie,          "alive/recruit records following a death (zombie trees)")
+  flag(n_ba_warning,      "plot x census combinations with BA 60-100 m2/ha (higher than typical)")
+  flag(n_ba_critical,     "plot x census combinations with BA >= 100 m2/ha (implausible)")
 
   cli::cli_h2("Verdict")
   if (any(hard_fails > 0)) {
@@ -327,6 +375,7 @@ gfb3_report <- function(data,
 
     readr::write_csv(status_tbl,  file.path(tmp_dir, "status.csv"))
     readr::write_csv(flags_tbl,   file.path(tmp_dir, "flags.csv"))
+    readr::write_csv(ba_tbl,      file.path(tmp_dir, "ba.csv"))
     readr::write_csv(dbh_sum_obj, file.path(tmp_dir, "dbh.csv"))
     readr::write_csv(as.data.frame(growth_sum_obj), file.path(tmp_dir, "growth.csv"))
     file.copy(hist_path,     file.path(tmp_dir, "growth_hist.png"))
@@ -345,9 +394,8 @@ gfb3_report <- function(data,
     notes_text <- if (!is.null(curation_log)) curation_log else ""
     writeLines(notes_text, file.path(tmp_dir, "curation_log.txt"))
 
-    # ── Plot metadata export ────────────────────────────────────────────────────
+    # ── Plot metadata export ──────────────────────────────────────────────────
     if (!is.null(plot_meta_tbl)) {
-      # Round coordinates to 2 dp for display in the exported table
       plot_meta_export <- plot_meta_tbl |>
         dplyr::mutate(
           Latitude  = round(Latitude,  2),
@@ -355,9 +403,8 @@ gfb3_report <- function(data,
         )
       readr::write_csv(plot_meta_export, file.path(tmp_dir, "plot_metadata.csv"))
 
-      # Render static map PNG using ggplot2 + sf
-      map_path <- file.path(tmp_dir, "plot_map.png")
-      leaflet_map <- .render_plot_map(plot_meta_tbl, map_path)
+      map_path     <- file.path(tmp_dir, "plot_map.png")
+      leaflet_map  <- .render_plot_map(plot_meta_tbl, map_path)
 
       if (export_map) {
         if (!requireNamespace("htmlwidgets", quietly = TRUE)) {
@@ -441,6 +488,7 @@ gfb3_report <- function(data,
   # ── RETURN ───────────────────────────────────────────────────────────────────
   invisible(list(
     status        = status_tbl,
+    ba            = ba_tbl,
     dbh           = dbh_sum_obj,
     growth        = growth_sum_obj,
     curation_log  = curation_log,
@@ -454,7 +502,9 @@ gfb3_report <- function(data,
       zero_growth     = n_zero_growth,
       fast_growth     = n_fast,
       duplicates      = n_dups,
-      zombies         = n_zombie
+      zombies         = n_zombie,
+      ba_warning      = n_ba_warning,
+      ba_critical     = n_ba_critical
     )
   ))
 }
@@ -480,7 +530,7 @@ gfb3_report <- function(data,
   has_mapview  <- requireNamespace("mapview",  quietly = TRUE)
   has_webshot2 <- requireNamespace("webshot2", quietly = TRUE)
 
-  # ── Primary: Leaflet screenshot via mapshot2 ─────────────────────────────────
+  # ── Primary: Leaflet screenshot via mapshot2 ──────────────────────────────
   if (!has_leaflet || !has_mapview || !has_webshot2) {
     missing_pkgs <- c(
       if (!has_leaflet)  "leaflet",
@@ -520,21 +570,20 @@ gfb3_report <- function(data,
       )
 
     mapview::mapshot2(
-      x      = m,
-      file   = path,
-      vwidth = 900,
+      x       = m,
+      file    = path,
+      vwidth  = 900,
       vheight = 600,
-      zoom   = 1
+      zoom    = 1
     )
 
     if (file.exists(path)) return(invisible(m))
-    # If mapshot2 silently failed, fall through to ggplot2 fallback
     cli::cli_alert_warning(
       "mapshot2 did not produce a file; falling back to ggplot2 map."
     )
   }
 
-  # ── Fallback 1: rnaturalearth + ggplot2 (no tile, no labels) ─────────────────
+  # ── Fallback 1: rnaturalearth + ggplot2 (no tile, no labels) ────────────────
   has_gg  <- requireNamespace("ggplot2",       quietly = TRUE)
   has_rne <- requireNamespace("rnaturalearth", quietly = TRUE)
   has_sf  <- requireNamespace("sf",            quietly = TRUE)

@@ -18,6 +18,7 @@ status  = read_csv("status.csv")
 flags   = read_csv("flags.csv")
 dbh     = read_csv("dbh.csv")
 growth  = read_csv("growth.csv")
+ba      = read_csv("ba.csv")
 
 # Plot metadata is optional — only loaded when the file exists
 plot_meta_path = os.path.join(tmp_dir, "plot_metadata.csv")
@@ -200,6 +201,40 @@ if os.path.exists(growth_hist_path):
     growth_block += [Spacer(1, 8), Image(growth_hist_path, width=400, height=267)]
 growth_block.append(Spacer(1, 10))
 story.append(KeepTogether(growth_block))
+
+
+# ── Basal Area by Plot x Census ───────────────────────────────────────────────
+ba_flagged = [r for r in ba if r["BA_flag"] != "ok"]
+
+ba_block = [
+    Paragraph("Basal Area by Plot x Census (m\u00b2/ha)", h2),
+    Paragraph(
+        "Stand basal area (BA) computed per plot x census combination for live "
+        "trees (Status 0). BA 60\u201399 m\u00b2/ha is flagged as a warning "
+        "(higher than typical); BA \u2265 100 m\u00b2/ha is a critical failure "
+        "(implausible). Expected range: 0\u201350 m\u00b2/ha.", body),
+    Spacer(1, 6),
+]
+
+if not ba_flagged:
+    ba_block.append(Paragraph(
+        "\u2713 All plot x census BA values are within the expected range (&lt; 60 m\u00b2/ha).",
+        body))
+else:
+    flag_colors = {"critical": "#FFDDC1", "warning": "#FFF9C4"}
+    ba_data = [["PlotID", "YR", "BA (m\u00b2/ha)", "Flag"]] + [
+        [r["PlotID"], r["YR"], r["BA"], r["BA_flag"]] for r in ba_flagged
+    ]
+    ba_tbl = Table(ba_data, colWidths=[180, 50, 90, 70], splitByRow=True)
+    ba_style = tbl_style()
+    for i, r in enumerate(ba_flagged, start=1):
+        bg = flag_colors.get(r["BA_flag"], "#FFFFFF")
+        ba_style.add("BACKGROUND", (0, i), (-1, i), colors.HexColor(bg))
+    ba_tbl.setStyle(ba_style)
+    ba_block.append(ba_tbl)
+
+ba_block.append(Spacer(1, 10))
+story.append(KeepTogether(ba_block))
 
 # ── Data Quality Flags ────────────────────────────────────────────────────────
 sev_colors = {"critical": "#FFDDC1", "warning": "#FFF9C4", "info": "#E8F5E9"}
