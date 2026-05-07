@@ -50,7 +50,7 @@
 #' of cross-sectional areas of all live trees (\code{Status == "0"}) divided by
 #' plot area (\code{PA}, in hectares). DBH is assumed to be in centimetres:
 #' \deqn{BA = \sum \pi (DBH / 200)^2 \; / \; PA}
-#' Plot x census combinations with \eqn{60 \le BA < 100} m\eqn{^2}/ha are
+#' Plot x census combinations with \eqn{50 \le BA < 100} m\eqn{^2}/ha are
 #' flagged as warnings ("higher than typical"); those with \eqn{BA \ge 100}
 #' m\eqn{^2}/ha are flagged as critical failures ("implausible BA").
 #'
@@ -195,7 +195,7 @@ report_gfb3 <- function(data,
       BA      = round(BA, 3),
       BA_flag = case_when(
         BA >= 100 ~ "critical",
-        BA >= 60  ~ "warning",
+        BA >= 50  ~ "warning",
         TRUE      ~ "ok"
       )
     )
@@ -327,7 +327,7 @@ report_gfb3 <- function(data,
   cli::cli_h2("Basal Area by Plot x Census")
   ba_flagged <- ba_tbl |> filter(BA_flag != "ok")
   if (nrow(ba_flagged) == 0) {
-    cli::cli_alert_success("All plot x census BA values are within the expected range (< 60 m2/ha).")
+    cli::cli_alert_success("All plot x census BA values are within the expected range (< 50 m2/ha).")
   } else {
     print(ba_flagged)
   }

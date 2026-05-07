@@ -218,7 +218,7 @@ ba_block = [
 
 if not ba_flagged:
     ba_block.append(Paragraph(
-        "\u2713 All plot x census BA values are within the expected range (&lt; 60 m\u00b2/ha).",
+        "\u2713 All plot x census BA values are within the expected range (&lt; 50 m\u00b2/ha).",
         body))
 else:
     flag_colors = {"critical": "#FFDDC1", "warning": "#FFF9C4"}
