@@ -172,7 +172,7 @@ gfb3_report <- function(data,
 
   # ── 9. Duplicate TreeID x YR ─────────────────────────────────────────────────
   n_dups <- dat |>
-    count(PlotID, TreeID, YR) |>
+    count(PlotID, TreeID, YR, Status) |>
     filter(n > 1) |>
     nrow()
 
@@ -240,14 +240,31 @@ gfb3_report <- function(data,
   cli::cli_h1("GFB3 Format Diagnostic Report")
 
   cli::cli_h2("Overview")
-  cli::cli_bullets(c(
+
+  overview_bullets <- c(
     "*" = "Dataset: {dataset_name}",
     "*" = "Rows: {n_rows}",
     "*" = "Trees: {n_trees}",
     "*" = "Plots: {n_plots}",
     "*" = "Year range: {yr_range[1]} - {yr_range[2]}"
-  ))
+  )
 
+  if (!is.null(plot_meta_tbl)) {
+    country   <- paste(unique(plot_meta_tbl$Country), collapse = ", ")
+    sites     <- paste(unique(plot_meta_tbl$Site),    collapse = ", ")
+    pi_name   <- paste(unique(plot_meta_tbl$PI),      collapse = ", ")
+    pi_email  <- paste(unique(plot_meta_tbl$PIe),     collapse = ", ")
+
+    overview_bullets <- c(
+      overview_bullets,
+      "*" = "Country: {country}",
+      "*" = "Site(s): {sites}",
+      "*" = "PI: {pi_name}",
+      "*" = "PI email: {pi_email}"
+    )
+  }
+
+  cli::cli_bullets(overview_bullets)
   # ── Curation notes (printed only when provided) ──────────────────────────────
   if (!is.null(curation_log) && nzchar(trimws(curation_log))) {
     cli::cli_h2("Curation notes")
