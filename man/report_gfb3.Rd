@@ -7,12 +7,12 @@
 report_gfb3(
   data,
   curation_log = NULL,
-  plot_metadata = NULL,
+  metadata = NULL,
   export_pdf = FALSE,
   export_xlsx = FALSE,
   export_map = FALSE,
-  output_dir = ".",
-  dataset_name = "data"
+  output_dir = "../exports",
+  dataset_name = NULL
 )
 }
 \arguments{
@@ -31,7 +31,7 @@ requested, written as a plain-text file (\code{curation_log.txt}) inside
 the temporary staging directory so that the Python export scripts can embed
 them in the PDF and/or Excel workbook. Default \code{NULL} (no notes).}
 
-\item{plot_metadata}{A tibble as returned by \code{make_plot_metadata()}, or
+\item{metadata}{A tibble as returned by \code{make_plot_metadata()}, or
 \code{NULL} (default). When provided, plot-level metadata (Country, Site,
 PI, PIe, Censuses, PlotID, Size, Latitude, Longitude) are included in the
 console report and, if exports are requested, a "Plot Locations" section
@@ -46,7 +46,7 @@ Default \code{FALSE}.}
 tables is written to \code{output_dir}. Requires Python with
 \code{openpyxl} installed. Default \code{FALSE}.}
 
-\item{export_map}{Logical. If \code{TRUE} and \code{plot_metadata} is
+\item{export_map}{Logical. If \code{TRUE} and \code{metadata} is
 supplied, a self-contained interactive HTML map
 (\code{<dataset_name>_plot_map.html}) is saved to \code{output_dir}.
 The HTML is fully interactive (pan, zoom) and self-contained in a single
@@ -55,15 +55,15 @@ regardless of this setting. Requires \pkg{htmlwidgets}.
 Default \code{FALSE}.}
 
 \item{output_dir}{Character. Directory where exported files are saved.
-Defaults to the current working directory.}
+Defaults the exports folder in the parent directory.}
 
 \item{dataset_name}{Character. Label used in export filenames and report
 headers. Defaults to \code{"gfb3_dataset"}.}
 }
 \value{
 Invisibly returns a named list with elements \code{status},
-  \code{ba}, \code{dbh}, \code{growth}, \code{flags}, \code{curation_log},
-  and \code{plot_metadata}.
+  \code{ba}, \code{dbh}, \code{growth}, \code{flags}, \code{na_pa},
+  \code{na_species}, \code{curation_log}, and \code{metadata}.
 }
 \description{
 Runs a suite of diagnostic checks on a GFB3-formatted dataset and prints a
@@ -76,14 +76,14 @@ Stand basal area (BA) is computed per plot x census combination as the sum
 of cross-sectional areas of all live trees (\code{Status == "0"}) divided by
 plot area (\code{PA}, in hectares). DBH is assumed to be in centimetres:
 \deqn{BA = \sum \pi (DBH / 200)^2 \; / \; PA}
-Plot x census combinations with \eqn{50 \le BA < 100} m\eqn{^2}/ha are
+Plot x census combinations with \eqn{50 < BA < 100} m\eqn{^2}/ha are
 flagged as warnings ("higher than typical"); those with \eqn{BA \ge 100}
 m\eqn{^2}/ha are flagged as critical failures ("implausible BA").
 }
 
 \section{Map export dependencies}{
 
-When \code{plot_metadata} is supplied and either \code{export_pdf} or
+When \code{metadata} is supplied and either \code{export_pdf} or
 \code{export_xlsx} is \code{TRUE}, \code{report_gfb3()} will attempt to
 render a Leaflet map screenshot using \pkg{leaflet}, \pkg{mapview}, and
 \pkg{webshot2} (which requires a headless Chromium browser). These packages
@@ -115,7 +115,7 @@ meta <- make_plot_metadata(data = my_gfb3, pi = "Jane Smith",
 
 result <- report_gfb3(paracou_gfb3,
                       curation_log  = my_notes,
-                      plot_metadata = meta,
+                      metadata      = meta,
                       export_pdf    = TRUE,
                       export_xlsx   = TRUE,
                       export_map    = TRUE,

@@ -233,6 +233,9 @@ else:
     ba_tbl.setStyle(ba_style)
     ba_block.append(ba_tbl)
 
+ba_bar_path = os.path.join(tmp_dir, "ba_bar.png")
+if os.path.exists(ba_bar_path):
+    ba_block += [Spacer(1, 8), Image(ba_bar_path, width=450, height=267)]
 ba_block.append(Spacer(1, 10))
 story.append(KeepTogether(ba_block))
 

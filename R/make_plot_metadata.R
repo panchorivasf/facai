@@ -32,6 +32,8 @@
 #'   exported filename. Defaults to \code{TRUE}. Set to \code{FALSE} when
 #'   \code{site} is derived from a column with multiple values and a clean
 #'   country-level filename is preferred.
+#' @param output_dir Character. Directory where exported files are saved.
+#'   Defaults the exports folder in the parent directory.
 #' @param filename Character. Optional. If provided, used directly as the
 #'   output filename (with \code{.xlsx} appended if missing). Overrides
 #'   \code{site_in_filename}.
@@ -67,6 +69,7 @@ make_plot_metadata <- function(country,
                                longitude   = NULL,
                                export_xlsx = TRUE,
                                site_in_filename = FALSE,
+                               output_dir    = "../exports",
                                filename = NULL) {
 
   # --- Resolve site from data if not provided ---
@@ -155,6 +158,8 @@ make_plot_metadata <- function(country,
   )
 
   if (export_xlsx) {
+    if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+
     if (!is.null(filename)) {
       # Ensure .xlsx extension
       if (!grepl("\\.xlsx$", filename, ignore.case = TRUE)) filename <- paste0(filename, ".xlsx")
@@ -166,9 +171,9 @@ make_plot_metadata <- function(country,
         paste0("in_", cnt, "_metadata.xlsx")
       }
     }
-    filepath <- file.path(getwd(), filename)
+    filepath <- file.path(output_dir, filename)
     openxlsx::write.xlsx(result, filepath)
-    cat("Table exported to", filepath, "!\n")
+    cat("Table exported to", normalizePath(filepath, winslash = "/"), "!\n")
   }
 
   return(result)

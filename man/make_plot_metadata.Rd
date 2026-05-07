@@ -17,6 +17,7 @@ make_plot_metadata(
   longitude = NULL,
   export_xlsx = TRUE,
   site_in_filename = FALSE,
+  output_dir = "../exports",
   filename = NULL
 )
 }
@@ -61,6 +62,9 @@ plots when \code{data} is \code{NULL}, otherwise derived.}
 exported filename. Defaults to \code{TRUE}. Set to \code{FALSE} when
 \code{site} is derived from a column with multiple values and a clean
 country-level filename is preferred.}
+
+\item{output_dir}{Character. Directory where exported files are saved.
+Defaults the exports folder in the parent directory.}
 
 \item{filename}{Character. Optional. If provided, used directly as the
 output filename (with \code{.xlsx} appended if missing). Overrides

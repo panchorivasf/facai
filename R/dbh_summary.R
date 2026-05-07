@@ -48,11 +48,25 @@ dbh_summary <- function(df,
                      ylab   = ylab,
                      breaks = 100)
 
-  s <- c(summary(x), sd = sd(x, na.rm = TRUE))
-  result <- as.data.frame(t(as.matrix(s))) |>
-    dplyr::rename(min = `Min.`, q1 = `1st Qu.`, median = Median,
-                  mean = Mean, q3 = `3rd Qu.`, max = `Max.`) |>
-    dplyr::mutate(dplyr::across(-c(min, max), \(x) round(x, 2)))
+  s <- summary(x)
+  nas <- sum(is.na(x))
+  result <- data.frame(
+    min    = round(min(x, na.rm = TRUE), 2),
+    q1     = round(quantile(x, 0.25, na.rm = TRUE), 2),
+    median = round(median(x, na.rm = TRUE), 2),
+    mean   = round(mean(x, na.rm = TRUE), 2),
+    q3     = round(quantile(x, 0.75, na.rm = TRUE), 2),
+    max    = round(max(x, na.rm = TRUE), 2),
+    `NA's` = nas,
+    sd     = round(sd(x, na.rm = TRUE), 2),
+    check.names = FALSE
+  )
+
+  # s <- c(summary(x), sd = sd(x, na.rm = TRUE))
+  # result <- as.data.frame(t(as.matrix(s))) |>
+  #   dplyr::rename(min = `Min.`, q1 = `1st Qu.`, median = Median,
+  #                 mean = Mean, q3 = `3rd Qu.`, max = `Max.`) |>
+  #   dplyr::mutate(dplyr::across(-c(min, max), \(x) round(x, 2)))
 
   result <- result |>
     mutate(min = round(min, 2),
