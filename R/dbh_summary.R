@@ -62,11 +62,6 @@ dbh_summary <- function(df,
     check.names = FALSE
   )
 
-  # s <- c(summary(x), sd = sd(x, na.rm = TRUE))
-  # result <- as.data.frame(t(as.matrix(s))) |>
-  #   dplyr::rename(min = `Min.`, q1 = `1st Qu.`, median = Median,
-  #                 mean = Mean, q3 = `3rd Qu.`, max = `Max.`) |>
-  #   dplyr::mutate(dplyr::across(-c(min, max), \(x) round(x, 2)))
 
   result <- result |>
     mutate(min = round(min, 2),
