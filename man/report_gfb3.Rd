@@ -76,7 +76,7 @@ Stand basal area (BA) is computed per plot x census combination as the sum
 of cross-sectional areas of all live trees (\code{Status == "0"}) divided by
 plot area (\code{PA}, in hectares). DBH is assumed to be in centimetres:
 \deqn{BA = \sum \pi (DBH / 200)^2 \; / \; PA}
-Plot x census combinations with \eqn{60 \le BA < 100} m\eqn{^2}/ha are
+Plot x census combinations with \eqn{50 \le BA < 100} m\eqn{^2}/ha are
 flagged as warnings ("higher than typical"); those with \eqn{BA \ge 100}
 m\eqn{^2}/ha are flagged as critical failures ("implausible BA").
 }
