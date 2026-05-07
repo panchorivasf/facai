@@ -4,6 +4,8 @@
 #' data frame and subsets to the standard set of columns.
 #'
 #' @param data A data frame containing raw GFB3 inventory data.
+#' @param keep_all_cols Logical. Whether or not to keep all the columns. If
+#' \code{FALSE}, only the mandatory GFB3 columns are kept. Default \code{TRUE}.
 #'
 #' @return A data frame with the following columns coerced to their expected
 #'   types: \code{PlotID} (character), \code{PA} (numeric), \code{Latitude}
@@ -20,9 +22,9 @@
 #' @importFrom magrittr %>%
 #'
 #' @export
-coerce_gfb3 <- function(data){
+coerce_gfb3 <- function(data, keep_all_cols = TRUE){
 
-  data |>
+ data <-  data |>
     mutate(PlotID     = as.character(PlotID),
            PA        = as.numeric(PA),
            Latitude  = as.numeric(Latitude),
@@ -31,9 +33,15 @@ coerce_gfb3 <- function(data){
            Species   = as.character(Species),
            Status    = as.character(Status),
            DBH       = as.numeric(DBH),
-           PrevDBH   = as.numeric(PrevDBH)) |>
-    select(PlotID, PA, Latitude, Longitude,
-           TreeID, Species, Status,
-           DBH,YR, PrevDBH, PrevYR)
+           PrevDBH   = as.numeric(PrevDBH))
+
+ if (!keep_all_cols){
+   data <- data |>
+     select(PlotID, PA, Latitude, Longitude,
+            TreeID, Species, Status,
+            DBH,YR, PrevDBH, PrevYR)
+ }
+
+ data
 
 }

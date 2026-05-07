@@ -4,10 +4,13 @@
 \alias{coerce_gfb3}
 \title{Coerce GFB3 columns to standard types}
 \usage{
-coerce_gfb3(data)
+coerce_gfb3(data, keep_all_cols = TRUE)
 }
 \arguments{
 \item{data}{A data frame containing raw GFB3 inventory data.}
+
+\item{keep_all_cols}{Logical. Whether or not to keep all the columns. If
+\code{FALSE}, only the mandatory GFB3 columns are kept. Default \code{TRUE}.}
 }
 \value{
 A data frame with the following columns coerced to their expected
