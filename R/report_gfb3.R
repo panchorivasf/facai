@@ -111,7 +111,11 @@ report_gfb3 <- function(data,
 
   if (is.null(dataset_name)) {
     if (!is.null(metadata) && all(c("Country", "Site") %in% names(metadata))) {
-      iso3 <- unique(metadata$Country)[1]
+      country_raw <- unique(metadata$Country)[1]
+      iso3 <- tryCatch({
+        result <- get_country_code(country_raw)
+        if (nrow(result) > 0) tolower(result$iso3c[1]) else tolower(country_raw)
+      }, error = function(e) tolower(country_raw))
       site <- unique(metadata$Site)[1] |>
         tolower() |>
         gsub("[^a-z0-9]+", "_", x = _) |>
@@ -137,7 +141,8 @@ report_gfb3 <- function(data,
   )
 
   data <- data |>
-    mutate(Status = as.character(Status))
+    mutate(Status = as.character(Status)) |>
+    mutate(across(where(is.character), trimws))
 
   status_tbl <- data |>
     count(Status) |>
@@ -150,9 +155,10 @@ report_gfb3 <- function(data,
   # ── 3. Missing data (scalar counts) ─────────────────────────────────────────
   n_missing_dbh     <- sum(is.na(data$DBH))
   n_missing_prevdbh <- sum(is.na(data$PrevDBH))
-  n_missing_species <- sum(
-    is.na(data$Species) | data$Species == "NA NA" | data$Species == " "
-  )
+  n_missing_species <- data |>
+    filter(is.na(Species) | !grepl("^[A-Z][a-z]+ [a-z]", trimws(Species))) |>
+    distinct(TreeID) |>
+    nrow()
 
   # ── 3b. NA summaries by PlotID ───────────────────────────────────────────────
   na_pa_tbl <- data |>
@@ -162,13 +168,12 @@ report_gfb3 <- function(data,
     arrange(desc(n_missing_PA))
 
   na_species_tbl <- data |>
+    filter(is.na(Species) | !grepl("^[A-Z][a-z]+ [a-z]", trimws(Species))) |>
     group_by(PlotID) |>
-    summarise(
-      n_missing_Species = sum(is.na(Species) | Species == "NA NA" | Species == " "),
-      .groups = "drop"
-    ) |>
+    summarise(n_missing_Species = n_distinct(TreeID), .groups = "drop") |>
     filter(n_missing_Species > 0) |>
     arrange(desc(n_missing_Species))
+
 
   # ── 4. DBH summary ───────────────────────────────────────────────────────────
   dbh_hist_path <- tempfile("dbh_hist_", fileext = ".png")
@@ -249,6 +254,14 @@ report_gfb3 <- function(data,
   p_ba <- ggplot2::ggplot(ba_bar,
                           ggplot2::aes(x = plot_yr, y = BA, fill = fill_col)) +
     ggplot2::geom_col(width = 0.7) +
+    ggplot2::geom_text(
+      ggplot2::aes(label = PlotID, y = BA + 1),
+      angle = 90, hjust = 0, vjust = 0.5,
+      size = 2.5, color = "grey30"
+    ) +
+    ggplot2::scale_x_discrete(
+      labels = function(x) sub(".*\n", "", x)  # keep only the year part
+    ) +
     ggplot2::scale_fill_manual(
       name   = "BA flag",
       values = c("ok" = "#4DAF7C", "warning" = "#F5A623", "critical" = "#E84855"),
@@ -261,13 +274,14 @@ report_gfb3 <- function(data,
                         colour = "#E84855", linewidth = 0.6) +
     ggplot2::labs(
       title = "Basal Area by Plot \u00d7 Census",
-      x     = "Plot \u00d7 Year",
+      x     = "Year",
       y     = expression(BA ~ (m^2 ~ ha^{-1}))
     ) +
+    ggplot2::expand_limits(y = max(ba_bar$BA, na.rm = TRUE) * 1.4) +
     ggplot2::theme_minimal(base_size = 9) +
     ggplot2::theme(
-      axis.text.x      = ggplot2::element_text(size = 7, lineheight = 0.85),
-      legend.position  = "bottom",
+      axis.text.x        = ggplot2::element_text(size = 8),
+      legend.position    = "bottom",
       panel.grid.major.x = ggplot2::element_blank()
     )
 
@@ -418,13 +432,13 @@ report_gfb3 <- function(data,
 
   flag(n_missing_dbh,     "rows with missing DBH")
   flag(n_missing_prevdbh, "rows with missing PrevDBH (expected for recruits/first intervals)")
-  flag(n_missing_species, "rows with missing or malformed Species")
+  flag(n_missing_species, "trees with missing or malformed Species")
   flag(n_small,           "rows with DBH < 10 cm (below GFB3 threshold)")
   flag(n_neg_growth,      "rows with negative DBH growth")
   flag(n_zero_growth,     "rows with zero DBH growth")
   flag(n_fast,            "rows with annual growth > 5 cm/yr (possible errors)")
   flag(n_dups,            "duplicate TreeID x YR combinations")
-  flag(n_zombie,          "alive/recruit records following a death (zombie trees)")
+  flag(n_zombie,          "alive/recruit records following a death")
   flag(n_ba_warning,      "plot x census combinations with BA 51-100 m\u00b2/ha (higher than typical)")
   flag(n_ba_critical,     "plot x census combinations with BA \u2265 100 m\u00b2/ha (implausible)")
 

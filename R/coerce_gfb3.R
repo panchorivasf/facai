@@ -24,7 +24,7 @@
 #' @export
 coerce_gfb3 <- function(data, keep_all_cols = TRUE){
 
- data <-  data |>
+  data <-  data |>
     mutate(PlotID     = as.character(PlotID),
            PA        = as.numeric(PA),
            Latitude  = as.numeric(Latitude),
@@ -33,7 +33,9 @@ coerce_gfb3 <- function(data, keep_all_cols = TRUE){
            Species   = as.character(Species),
            Status    = as.character(Status),
            DBH       = as.numeric(DBH),
-           PrevDBH   = as.numeric(PrevDBH))
+           PrevDBH   = as.numeric(PrevDBH)) |>
+    mutate(across(where(is.character), \(x) trimws(gsub("\\s+", " ", gsub("\u00a0", " ", x)))))
+
 
  if (!keep_all_cols){
    data <- data |>
