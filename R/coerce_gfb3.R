@@ -34,7 +34,11 @@ coerce_gfb3 <- function(data, keep_all_cols = TRUE){
            Status    = as.character(Status),
            DBH       = as.numeric(DBH),
            PrevDBH   = as.numeric(PrevDBH)) |>
-    mutate(across(where(is.character), \(x) trimws(gsub("\\s+", " ", gsub("\u00a0", " ", x)))))
+    mutate(across(where(is.character),
+                  \(x) trimws(gsub("\\s+", " ", gsub("\u00a0", " ", x))))) |>
+    select(PlotID, PA, Latitude, Longitude,
+           TreeID, Species, Status,
+           DBH,YR, PrevDBH, PrevYR, everything())
 
 
  if (!keep_all_cols){

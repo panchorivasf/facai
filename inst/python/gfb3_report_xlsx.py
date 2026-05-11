@@ -1,4 +1,4 @@
-import sys, csv
+import sys, csv, os
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -98,6 +98,31 @@ write_sheet(wb, "Growth",
             g_keys,
             [[r[k] for k in g_keys] for r in growth],
             col_widths=[12] * len(g_keys))
+
+# ── BA sheet ──────────────────────────────────────────────────────────────────
+ba_path = os.path.join(tmp_dir, "ba.csv")
+if os.path.exists(ba_path):
+    ba = read_csv("ba.csv")
+    ba_fills = [
+        PatternFill("solid", fgColor=CRIT) if r["BA_flag"] == "critical"
+        else PatternFill("solid", fgColor=WARN) if r["BA_flag"] == "warning"
+        else alt_fill(i)
+        for i, r in enumerate(ba)
+    ]
+    write_sheet(wb, "BasalArea",
+                ["PlotID", "YR", "BA (m2/ha)", "Flag"],
+                [[r["PlotID"], r["YR"], r["BA"], r["BA_flag"]] for r in ba],
+                col_widths=[20, 12, 14, 12],
+                row_fills=ba_fills)
+
+# ── TPH sheet ─────────────────────────────────────────────────────────────────
+tph_path = os.path.join(tmp_dir, "tph.csv")
+if os.path.exists(tph_path):
+    tph = read_csv("tph.csv")
+    write_sheet(wb, "TPH",
+                ["PlotID", "YR", "n_trees", "PA", "TPH"],
+                [[r["PlotID"], r["YR"], r["n_trees"], r["PA"], r["TPH"]] for r in tph],
+                col_widths=[20, 12, 10, 10, 12])
 
 # ── Flags sheet ───────────────────────────────────────────────────────────────
 sev_fills = {

@@ -9,6 +9,9 @@
 #'   \code{Latitude}, \code{Longitude}, \code{TreeID}, \code{Species},
 #'   \code{Status}, \code{DBH}, \code{YR}, \code{PrevDBH}, \code{PrevYR}.
 #'   DBH is assumed to be in centimetres.
+#' @param unidentified_label Character. Species label used to mark unidentified
+#'   trees. Rows matching this value are excluded from the malformed-species
+#'   flag and summarised separately. Default \code{"Unidentified sp."}.
 #' @param curation_log Character string (or \code{NULL}). A free-text narrative
 #'   describing the curation and data-wrangling decisions applied to the dataset
 #'   before formatting (e.g., outlier removal, coordinate corrections, species
@@ -23,76 +26,18 @@
 #'   console report and, if exports are requested, a "Plot Locations" section
 #'   with a summary table and a static map is added to the PDF / Excel workbook.
 #'   Only the first occurrence of each PlotID is used (i.e. one row per plot).
-#' @param export_pdf Logical. If \code{TRUE}, a narrative PDF report is written
-#'   to \code{output_dir}. Requires Python with \code{reportlab} installed.
-#'   Default \code{FALSE}.
-#' @param export_xlsx Logical. If \code{TRUE}, an Excel workbook with diagnostic
-#'   tables is written to \code{output_dir}. Requires Python with
-#'   \code{openpyxl} installed. Default \code{FALSE}.
-#' @param export_map Logical. If \code{TRUE} and \code{metadata} is
-#'   supplied, a self-contained interactive HTML map
-#'   (\code{<dataset_name>_plot_map.html}) is saved to \code{output_dir}.
-#'   The HTML is fully interactive (pan, zoom) and self-contained in a single
-#'   file. The PDF / Excel report always uses a static PNG of the same map
-#'   regardless of this setting. Requires \pkg{htmlwidgets}.
-#'   Default \code{FALSE}.
+#' @param export Character vector controlling which outputs are exported.
+#'   Any combination of \code{"pdf"}, \code{"xlsx"}, and \code{"map"}.
+#'   Defaults to all three. Pass \code{character(0)} or \code{NULL} to skip
+#'   all exports and run diagnostics only.
 #' @param output_dir Character. Directory where exported files are saved.
 #'   Defaults the exports folder in the parent directory.
 #' @param dataset_name Character. Label used in export filenames and report
 #'   headers. Defaults to \code{"gfb3_dataset"}.
 #'
 #' @return Invisibly returns a named list with elements \code{status},
-#'   \code{ba}, \code{dbh}, \code{growth}, \code{flags}, \code{na_pa},
-#'   \code{na_species}, \code{curation_log}, and \code{metadata}.
-#'
-#' @section Basal area diagnostics:
-#' Stand basal area (BA) is computed per plot x census combination as the sum
-#' of cross-sectional areas of all live trees (\code{Status == "0"}) divided by
-#' plot area (\code{PA}, in hectares). DBH is assumed to be in centimetres:
-#' \deqn{BA = \sum \pi (DBH / 200)^2 \; / \; PA}
-#' Plot x census combinations with \eqn{50 < BA < 100} m\eqn{^2}/ha are
-#' flagged as warnings ("higher than typical"); those with \eqn{BA \ge 100}
-#' m\eqn{^2}/ha are flagged as critical failures ("implausible BA").
-#'
-#' @section Map export dependencies:
-#' When \code{metadata} is supplied and either \code{export_pdf} or
-#' \code{export_xlsx} is \code{TRUE}, \code{report_gfb3()} will attempt to
-#' render a Leaflet map screenshot using \pkg{leaflet}, \pkg{mapview}, and
-#' \pkg{webshot2} (which requires a headless Chromium browser). These packages
-#' are not installed with \pkg{facai} by default. Run
-#' \code{\link{facai_setup_map}()} once after installing the package to set
-#' everything up:
-#'
-#' \preformatted{
-#' facai_setup_map()
-#' }
-#'
-#' If these packages are not available, the map will fall back to a static
-#' \pkg{ggplot2} / \pkg{rnaturalearth} plot, and then to a base-R plot if
-#' those are also absent. The rest of the report is unaffected in all cases.
-#'
-#' @examples
-#' \dontrun{
-#' my_notes <- "
-#' - Removed 14 stems with DBH < 1 cm (measurement artefacts confirmed by field team).
-#' - Corrected plot coordinates for PA 07 (GPS drift in 2018 census; adjusted to match
-#'   2014 reference positions).
-#' - Harmonised species names against the TNRS database; 32 morphospecies retained as-is.
-#' - Status recoded from local 3-class scheme (V/M/R) to GFB3 (0/1/2).
-#' "
-#'
-#' meta <- make_plot_metadata(data = my_gfb3, pi = "Jane Smith",
-#'                            pie = "j.smith@uni.edu")
-#'
-#' result <- report_gfb3(paracou_gfb3,
-#'                       curation_log  = my_notes,
-#'                       metadata      = meta,
-#'                       export_pdf    = TRUE,
-#'                       export_xlsx   = TRUE,
-#'                       export_map    = TRUE,
-#'                       output_dir    = "reports/",
-#'                       dataset_name  = "paracou_01")
-#' }
+#'   \code{ba}, \code{tph}, \code{dbh}, \code{growth}, \code{flags},
+#'   \code{na_pa}, \code{na_species}, \code{curation_log}, and \code{metadata}.
 #'
 #' @importFrom dplyr count mutate select filter summarise pull arrange group_by
 #'   ungroup n_distinct distinct left_join cumany first
@@ -100,14 +45,16 @@
 #'   cli_alert_danger cli_verbatim
 #' @export
 report_gfb3 <- function(data,
+                        unidentified_label = "Unidentified sp.",
                         curation_log  = NULL,
                         metadata      = NULL,
-                        export_pdf    = FALSE,
-                        export_xlsx   = FALSE,
-                        export_map    = FALSE,
+                        export        = c("pdf", "xlsx", "map"),
                         output_dir    = "../exports",
                         dataset_name  = NULL) {
 
+  export_pdf  <- "pdf"  %in% export
+  export_xlsx <- "xlsx" %in% export
+  export_map  <- "map"  %in% export
 
   if (is.null(dataset_name)) {
     if (!is.null(metadata) && all(c("Country", "Site") %in% names(metadata))) {
@@ -122,7 +69,7 @@ report_gfb3 <- function(data,
         gsub("^_|_$", "", x = _)
       dataset_name <- paste0("in_", iso3, "_", site)
     } else {
-      dataset_name <- "gfb3_dataset"
+      dataset_name <- ""
     }
   }
 
@@ -141,8 +88,8 @@ report_gfb3 <- function(data,
   )
 
   data <- data |>
-    mutate(Status = as.character(Status)) |>
-    mutate(across(where(is.character), trimws))
+    mutate(across(where(is.character), trimws)) |>
+    mutate(Status = as.character(Status))
 
   status_tbl <- data |>
     count(Status) |>
@@ -156,7 +103,9 @@ report_gfb3 <- function(data,
   n_missing_dbh     <- sum(is.na(data$DBH))
   n_missing_prevdbh <- sum(is.na(data$PrevDBH))
   n_missing_species <- data |>
-    filter(is.na(Species) | !grepl("^[A-Z][a-z]+ [a-z]", trimws(Species))) |>
+    filter(is.na(Species) |
+             (!grepl("^[A-Z][a-z]+ [a-z]", Species) &
+                Species != unidentified_label)) |>
     distinct(TreeID) |>
     nrow()
 
@@ -168,12 +117,21 @@ report_gfb3 <- function(data,
     arrange(desc(n_missing_PA))
 
   na_species_tbl <- data |>
-    filter(is.na(Species) | !grepl("^[A-Z][a-z]+ [a-z]", trimws(Species))) |>
+    filter(is.na(Species) |
+             (!grepl("^[A-Z][a-z]+ [a-z]", Species) &
+                Species != unidentified_label)) |>
     group_by(PlotID) |>
     summarise(n_missing_Species = n_distinct(TreeID), .groups = "drop") |>
     filter(n_missing_Species > 0) |>
     arrange(desc(n_missing_Species))
 
+  unid_tbl <- data |>
+    filter(!is.na(unidentified_label) &
+             nzchar(unidentified_label) &
+             Species == unidentified_label) |>
+    group_by(PlotID) |>
+    summarise(n_unidentified = n_distinct(TreeID), .groups = "drop") |>
+    arrange(desc(n_unidentified))
 
   # ── 4. DBH summary ───────────────────────────────────────────────────────────
   dbh_hist_path <- tempfile("dbh_hist_", fileext = ".png")
@@ -215,8 +173,6 @@ report_gfb3 <- function(data,
   n_small <- sum(data$DBH < 10, na.rm = TRUE)
 
   # ── 9. Basal area per plot x census ──────────────────────────────────────────
-  # DBH in cm: radius in m = DBH / (2 * 100) = DBH / 200
-  # BA (m2/ha) = sum(pi * (DBH / 200)^2) / PA
   ba_tbl <- data |>
     filter(Status == "0", !is.na(DBH), !is.na(PA), PA > 0) |>
     group_by(PlotID, YR) |>
@@ -236,59 +192,155 @@ report_gfb3 <- function(data,
   n_ba_warning  <- sum(ba_tbl$BA_flag == "warning")
   n_ba_critical <- sum(ba_tbl$BA_flag == "critical")
 
-  # ── 9b. Basal area barplot ────────────────────────────────────────────────────
-  ba_plot_path <- tempfile("ba_bar_", fileext = ".png")
-
+  # ── 9b. Basal area barplots (chunked) ────────────────────────────────────────
   ba_bar <- ba_tbl |>
     arrange(PlotID, YR) |>
     mutate(
-      plot_yr  = factor(paste0(PlotID, "\n", YR),
-                        levels = paste0(PlotID, "\n", YR)),
-      fill_col = case_when(
+      fill_col  = case_when(
         BA_flag == "critical" ~ "critical",
         BA_flag == "warning"  ~ "warning",
         TRUE                  ~ "ok"
       )
     )
 
-  p_ba <- ggplot2::ggplot(ba_bar,
-                          ggplot2::aes(x = plot_yr, y = BA, fill = fill_col)) +
-    ggplot2::geom_col(width = 0.7) +
-    ggplot2::geom_text(
-      ggplot2::aes(label = PlotID, y = BA + 1),
-      angle = 90, hjust = 0, vjust = 0.5,
-      size = 2.5, color = "grey30"
-    ) +
-    ggplot2::scale_x_discrete(
-      labels = function(x) sub(".*\n", "", x)  # keep only the year part
-    ) +
-    ggplot2::scale_fill_manual(
-      name   = "BA flag",
-      values = c("ok" = "#4DAF7C", "warning" = "#F5A623", "critical" = "#E84855"),
-      labels = c("ok" = "OK (\u226450)", "warning" = "Warning (51\u2013100)",
-                 "critical" = "Critical (\u2265100)")
-    ) +
-    ggplot2::geom_hline(yintercept = 50,  linetype = "dashed",
-                        colour = "#F5A623", linewidth = 0.6) +
-    ggplot2::geom_hline(yintercept = 100, linetype = "dashed",
-                        colour = "#E84855", linewidth = 0.6) +
-    ggplot2::labs(
-      title = "Basal Area by Plot \u00d7 Census",
-      x     = "Year",
-      y     = expression(BA ~ (m^2 ~ ha^{-1}))
-    ) +
-    ggplot2::expand_limits(y = max(ba_bar$BA, na.rm = TRUE) * 1.4) +
-    ggplot2::theme_minimal(base_size = 9) +
-    ggplot2::theme(
-      axis.text.x        = ggplot2::element_text(size = 8),
-      legend.position    = "bottom",
-      panel.grid.major.x = ggplot2::element_blank()
-    )
+  # chunk_size: target max bars per figure, chosen so chunks are roughly even.
+  # We pick the smallest number of figures needed to keep each under 25 bars,
+  # then recalculate chunk_size as total / n_figures so distribution is even.
+  .ba_total     <- nrow(ba_bar)
+  .n_ba_figs    <- max(1L, ceiling(.ba_total / 25L))
+  chunk_size    <- ceiling(.ba_total / .n_ba_figs)
 
-  ggplot2::ggsave(ba_plot_path, plot = p_ba,
-                  width = max(6, nrow(ba_tbl) * 0.35), height = 4,
-                  dpi = 200, limitsize = FALSE)
+  # Group complete plots into chunks so no plot is split across figures.
+  # Greedy: keep adding plots until the next one would exceed chunk_size bars.
+  ba_plot_groups <- local({
+    plots   <- unique(ba_bar$PlotID)
+    n_bars  <- sapply(plots, function(p) sum(ba_bar$PlotID == p))
+    groups  <- list(); current <- c(); current_n <- 0L
+    for (k in seq_along(plots)) {
+      if (current_n + n_bars[k] > chunk_size && length(current) > 0) {
+        groups  <- c(groups, list(current))
+        current <- plots[k]; current_n <- n_bars[k]
+      } else {
+        current   <- c(current, plots[k])
+        current_n <- current_n + n_bars[k]
+      }
+    }
+    if (length(current) > 0) groups <- c(groups, list(current))
+    groups
+  })
 
+  n_ba_chunks   <- length(ba_plot_groups)
+  ba_plot_paths <- lapply(seq_len(n_ba_chunks), function(i) {
+    chunk <- ba_bar |>
+      filter(PlotID %in% ba_plot_groups[[i]]) |>
+      mutate(
+        bar_label = paste0(PlotID, "\n", round(YR, 2)),
+        bar_label = factor(bar_label, levels = unique(bar_label)),
+        bar_text  = paste0(PlotID, "-", floor(YR))
+      )
+
+    p <- ggplot2::ggplot(chunk,
+                         ggplot2::aes(x = bar_label, y = BA, fill = fill_col)) +
+      ggplot2::geom_col(width = 0.7) +
+      ggplot2::geom_text(
+        ggplot2::aes(label = bar_text, y = BA + max(BA, na.rm = TRUE) * 0.01),
+        angle = 90, hjust = 0, vjust = 0.5,
+        size = 2.2, color = "grey30"
+      ) +
+      ggplot2::scale_x_discrete(labels = function(x) rep("", length(x))) +
+      ggplot2::scale_fill_manual(
+        name   = "BA flag",
+        values = c("ok" = "#4DAF7C", "warning" = "#F5A623", "critical" = "#E84855"),
+        labels = c("ok" = "OK (\u226450)", "warning" = "Warning (51\u2013100)",
+                   "critical" = "Critical (\u2265100)")
+      ) +
+      ggplot2::geom_hline(yintercept = 50,  linetype = "dashed",
+                          colour = "#F5A623", linewidth = 0.6) +
+      ggplot2::geom_hline(yintercept = 100, linetype = "dashed",
+                          colour = "#E84855", linewidth = 0.6) +
+      ggplot2::labs(x = NULL, y = expression(BA ~ (m^2 ~ ha^{-1}))) +
+      ggplot2::expand_limits(y = max(chunk$BA, na.rm = TRUE) * 1.6) +
+      ggplot2::theme_minimal(base_size = 9) +
+      ggplot2::theme(
+        axis.text.x        = ggplot2::element_blank(),
+        axis.ticks.x       = ggplot2::element_blank(),
+        legend.position    = "bottom",
+        panel.grid.major.x = ggplot2::element_blank()
+      )
+
+    path <- tempfile(paste0("ba_bar_part", i, "_"), fileext = ".png")
+    ggplot2::ggsave(path, plot = p, width = 8, height = 4,
+                    dpi = 200, limitsize = FALSE)
+    path
+  })
+  ba_plot_paths <- unlist(ba_plot_paths)
+
+  # ── 9c. Trees per hectare by plot x census ────────────────────────────────────
+  tph_tbl <- data |>
+    filter(Status == "0", !is.na(DBH), !is.na(PA)) |>
+    group_by(PlotID, YR) |>
+    summarise(
+      n_trees = n(),
+      PA      = first(PA),
+      TPH     = n_trees / PA,
+      .groups = "drop"
+    ) |>
+    arrange(PlotID, YR)
+
+  tph_bar <- tph_tbl |>
+    arrange(PlotID, YR)
+
+  # Same greedy plot-grouping for TPH
+  tph_plot_groups <- local({
+    plots   <- unique(tph_bar$PlotID)
+    n_bars  <- sapply(plots, function(p) sum(tph_bar$PlotID == p))
+    groups  <- list(); current <- c(); current_n <- 0L
+    for (k in seq_along(plots)) {
+      if (current_n + n_bars[k] > chunk_size && length(current) > 0) {
+        groups  <- c(groups, list(current))
+        current <- plots[k]; current_n <- n_bars[k]
+      } else {
+        current   <- c(current, plots[k])
+        current_n <- current_n + n_bars[k]
+      }
+    }
+    if (length(current) > 0) groups <- c(groups, list(current))
+    groups
+  })
+
+  n_tph_chunks   <- length(tph_plot_groups)
+  tph_plot_paths <- lapply(seq_len(n_tph_chunks), function(i) {
+    chunk <- tph_bar |>
+      filter(PlotID %in% tph_plot_groups[[i]]) |>
+      mutate(
+        bar_label = paste0(PlotID, "\n", round(YR, 2)),
+        bar_label = factor(bar_label, levels = unique(bar_label)),
+        bar_text  = paste0(PlotID, "-", floor(YR))
+      )
+
+    p <- ggplot2::ggplot(chunk, ggplot2::aes(x = bar_label, y = TPH)) +
+      ggplot2::geom_col(width = 0.7, fill = "#4DAF7C") +
+      ggplot2::geom_text(
+        ggplot2::aes(label = bar_text, y = TPH + max(TPH, na.rm = TRUE) * 0.01),
+        angle = 90, hjust = 0, vjust = 0.5,
+        size = 2.2, color = "grey30"
+      ) +
+      ggplot2::scale_x_discrete(labels = function(x) rep("", length(x))) +
+      ggplot2::labs(x = NULL, y = "TPH (stems ha\u207b\u00b9)") +
+      ggplot2::expand_limits(y = max(chunk$TPH, na.rm = TRUE) * 1.6) +
+      ggplot2::theme_minimal(base_size = 9) +
+      ggplot2::theme(
+        axis.text.x        = ggplot2::element_blank(),
+        axis.ticks.x       = ggplot2::element_blank(),
+        panel.grid.major.x = ggplot2::element_blank()
+      )
+
+    path <- tempfile(paste0("tph_bar_part", i, "_"), fileext = ".png")
+    ggplot2::ggsave(path, plot = p, width = 8, height = 4,
+                    dpi = 200, limitsize = FALSE)
+    path
+  })
+  tph_plot_paths <- unlist(tph_plot_paths)
 
   # ── 10. Duplicate TreeID x YR ────────────────────────────────────────────────
   n_dups <- data |>
@@ -390,13 +442,11 @@ report_gfb3 <- function(data,
 
   cli::cli_bullets(overview_bullets)
 
-  # ── Curation notes (printed only when provided) ──────────────────────────────
   if (!is.null(curation_log) && nzchar(trimws(curation_log))) {
     cli::cli_h2("Curation notes")
     cli::cli_verbatim(curation_log)
   }
 
-  # ── Plot metadata (printed only when provided) ───────────────────────────────
   if (!is.null(plot_meta_tbl)) {
     cli::cli_h2("Plot Locations")
     print(plot_meta_tbl)
@@ -411,8 +461,6 @@ report_gfb3 <- function(data,
   cli::cli_h2("Growth Summary")
   cat(growth_sum, sep = "\n")
 
-
-  # ---- Basal area barplots ----------------------------------------------------
   cli::cli_h2("Basal Area by Plot x Census")
   ba_flagged <- ba_tbl |> filter(BA_flag != "ok")
   if (nrow(ba_flagged) == 0) {
@@ -422,6 +470,9 @@ report_gfb3 <- function(data,
   } else {
     print(ba_flagged)
   }
+
+  cli::cli_h2("Trees per Hectare by Plot x Census")
+  print(tph_tbl)
 
   cli::cli_h2("Data Quality Flags")
 
@@ -442,7 +493,6 @@ report_gfb3 <- function(data,
   flag(n_ba_warning,      "plot x census combinations with BA 51-100 m\u00b2/ha (higher than typical)")
   flag(n_ba_critical,     "plot x census combinations with BA \u2265 100 m\u00b2/ha (implausible)")
 
-  # ── Per-plot NA breakdowns ───────────────────────────────────────────────────
   cli::cli_h2("Missing PA by Plot")
   if (nrow(na_pa_tbl) == 0) {
     cli::cli_alert_success("No missing PA values.")
@@ -459,7 +509,14 @@ report_gfb3 <- function(data,
     print(na_species_tbl)
   }
 
-
+  cli::cli_h2("Unidentified Species by Plot")
+  if (nrow(unid_tbl) == 0) {
+    cli::cli_alert_success("No trees labelled '{unidentified_label}'.")
+  } else {
+    n_unid <- sum(unid_tbl$n_unidentified)
+    cli::cli_alert_info("{n_unid} tree(s) labelled '{unidentified_label}':")
+    print(unid_tbl)
+  }
 
   cli::cli_h2("Verdict")
   if (any(hard_fails > 0)) {
@@ -469,9 +526,6 @@ report_gfb3 <- function(data,
   } else {
     cli::cli_alert_success(verdict)
   }
-
-
-  # cli::cli_alert_info("BA barplot saved to: {ba_plot_path}")
 
   # ── EXPORTS ──────────────────────────────────────────────────────────────────
   if (export_pdf || export_xlsx || (export_map && !is.null(plot_meta_tbl))) {
@@ -484,34 +538,43 @@ report_gfb3 <- function(data,
       unlink(tmp_dir, recursive = TRUE)
       unlink(hist_path)
       unlink(dbh_hist_path)
-      unlink(ba_plot_path)
+      unlink(ba_plot_paths)
+      unlink(tph_plot_paths)
     }, add = TRUE)
 
     readr::write_csv(status_tbl,     file.path(tmp_dir, "status.csv"))
     readr::write_csv(flags_tbl,      file.path(tmp_dir, "flags.csv"))
     readr::write_csv(ba_tbl,         file.path(tmp_dir, "ba.csv"))
+    readr::write_csv(tph_tbl,        file.path(tmp_dir, "tph.csv"))
     readr::write_csv(na_pa_tbl,      file.path(tmp_dir, "na_pa.csv"))
     readr::write_csv(na_species_tbl, file.path(tmp_dir, "na_species.csv"))
+    readr::write_csv(unid_tbl, file.path(tmp_dir, "unidentified.csv"))
     readr::write_csv(dbh_sum_obj,    file.path(tmp_dir, "dbh.csv"))
     readr::write_csv(as.data.frame(growth_sum_obj), file.path(tmp_dir, "growth.csv"))
+
     file.copy(hist_path,     file.path(tmp_dir, "growth_hist.png"))
     file.copy(dbh_hist_path, file.path(tmp_dir, "dbh_hist.png"))
-    file.copy(ba_plot_path, file.path(tmp_dir, "ba_bar.png"))
 
-    meta <- data.frame(
+    for (i in seq_along(ba_plot_paths)) {
+      file.copy(ba_plot_paths[i],
+                file.path(tmp_dir, paste0("ba_bar_part", i, ".png")))
+    }
+    for (i in seq_along(tph_plot_paths)) {
+      file.copy(tph_plot_paths[i],
+                file.path(tmp_dir, paste0("tph_bar_part", i, ".png")))
+    }
+
+    meta_df <- data.frame(
       key   = c("dataset_name", "n_rows", "n_trees", "n_plots",
                 "yr_min", "yr_max", "verdict"),
       value = c(dataset_name, n_rows, n_trees, n_plots,
                 yr_range[1], yr_range[2], verdict)
     )
-    readr::write_csv(meta, file.path(tmp_dir, "meta.csv"))
+    readr::write_csv(meta_df, file.path(tmp_dir, "meta.csv"))
 
-    # Write curation notes (empty string when NULL so Python scripts can always
-    # read the file without extra existence checks)
     notes_text <- if (!is.null(curation_log)) curation_log else ""
     writeLines(notes_text, file.path(tmp_dir, "curation_log.txt"))
 
-    # ── Plot metadata export ──────────────────────────────────────────────────
     if (!is.null(plot_meta_tbl)) {
       plot_meta_export <- plot_meta_tbl |>
         dplyr::mutate(
@@ -538,19 +601,16 @@ report_gfb3 <- function(data,
         } else {
           html_path <- file.path(output_dir,
                                  paste0(dataset_name, "_plot_map.html"))
-
           tmp_html <- tempfile(fileext = ".html")
           htmlwidgets::saveWidget(leaflet_map, file = tmp_html,
                                   selfcontained = TRUE, libdir = NULL)
           file.copy(tmp_html, html_path, overwrite = TRUE)
           unlink(tmp_html)
-
           cli::cli_alert_success("Interactive map written to: {html_path}")
         }
       }
     }
 
-    # Resolve Python executable
     python <- Sys.which("python")
     if (python == "") python <- Sys.which("python3")
     if (python == "") cli::cli_abort("No Python executable found on PATH.")
@@ -612,10 +672,12 @@ report_gfb3 <- function(data,
   invisible(list(
     status       = status_tbl,
     ba           = ba_tbl,
+    tph          = tph_tbl,
     dbh          = dbh_sum_obj,
     growth       = growth_sum_obj,
     na_pa        = na_pa_tbl,
     na_species   = na_species_tbl,
+    unidentified = unid_tbl,
     curation_log = curation_log,
     metadata     = plot_meta_tbl,
     flags = list(
@@ -636,26 +698,12 @@ report_gfb3 <- function(data,
 
 
 # ── Internal helper: render static plot-location map ─────────────────────────
-#
-# Renders a Leaflet map and saves it as a PNG screenshot using mapview::mapshot2
-# (which drives a headless Chromium via webshot2). No labels on the map —
-# plot locations are shown as plain circle markers only.
-#
-# Tile provider: Esri.WorldImagery + reference overlay (no API key).
-#
-# Falls back to an rnaturalearth ggplot2 map if mapview / webshot2 are not
-# installed, and to base-R as a last resort.
-#
-# @param tbl  One-row-per-plot tibble with Latitude, Longitude columns.
-# @param path Output PNG path (must end in .png).
-# @noRd
 .render_plot_map <- function(tbl, path) {
 
   has_leaflet  <- requireNamespace("leaflet",  quietly = TRUE)
   has_mapview  <- requireNamespace("mapview",  quietly = TRUE)
   has_webshot2 <- requireNamespace("webshot2", quietly = TRUE)
 
-  # ── Primary: Leaflet screenshot via mapshot2 ──────────────────────────────
   if (!has_leaflet || !has_mapview || !has_webshot2) {
     missing_pkgs <- c(
       if (!has_leaflet)  "leaflet",
@@ -669,7 +717,6 @@ report_gfb3 <- function(data,
   }
 
   if (has_leaflet && has_mapview && has_webshot2) {
-
     m <- leaflet::leaflet(data = tbl) |>
       leaflet::addProviderTiles(leaflet::providers$Esri.WorldImagery) |>
       leaflet::addTiles(
@@ -694,13 +741,7 @@ report_gfb3 <- function(data,
         options = list(maxZoom = 13)
       )
 
-    mapview::mapshot2(
-      x       = m,
-      file    = path,
-      vwidth  = 900,
-      vheight = 600,
-      zoom    = 1
-    )
+    mapview::mapshot2(x = m, file = path, vwidth = 900, vheight = 600, zoom = 1)
 
     if (file.exists(path)) return(invisible(m))
     cli::cli_alert_warning(
@@ -708,7 +749,6 @@ report_gfb3 <- function(data,
     )
   }
 
-  # ── Fallback 1: rnaturalearth + ggplot2 (no tile, no labels) ────────────────
   has_gg  <- requireNamespace("ggplot2",       quietly = TRUE)
   has_rne <- requireNamespace("rnaturalearth", quietly = TRUE)
   has_sf  <- requireNamespace("sf",            quietly = TRUE)
@@ -721,27 +761,18 @@ report_gfb3 <- function(data,
 
   if (has_gg && has_rne && has_sf) {
     world  <- rnaturalearth::ne_countries(scale = "medium", returnclass = "sf")
-    pts_sf <- sf::st_as_sf(tbl,
-                           coords = c("Longitude", "Latitude"),
-                           crs    = 4326)
+    pts_sf <- sf::st_as_sf(tbl, coords = c("Longitude", "Latitude"), crs = 4326)
     p <- ggplot2::ggplot() +
-      ggplot2::geom_sf(data      = world,
-                       fill      = "#EAE7DC",
-                       color     = "#AAAAAA",
+      ggplot2::geom_sf(data = world, fill = "#EAE7DC", color = "#AAAAAA",
                        linewidth = 0.25) +
-      ggplot2::geom_sf(data        = pts_sf,
-                       color       = "#2E4057",
-                       fill        = "#E84855",
-                       shape       = 21,
-                       size        = 3,
-                       stroke      = 0.8) +
+      ggplot2::geom_sf(data = pts_sf, color = "#2E4057", fill = "#E84855",
+                       shape = 21, size = 3, stroke = 0.8) +
       ggplot2::coord_sf(xlim = xlim, ylim = ylim, expand = FALSE) +
       ggplot2::labs(x = "Longitude", y = "Latitude") +
       ggplot2::theme_minimal(base_size = 9) +
       ggplot2::theme(
         panel.background = ggplot2::element_rect(fill = "#C8E6F5", color = NA),
-        panel.grid       = ggplot2::element_line(color = "#CCCCCC66",
-                                                 linewidth = 0.2)
+        panel.grid       = ggplot2::element_line(color = "#CCCCCC66", linewidth = 0.2)
       )
     png(path, width = 700, height = 480, res = 96)
     on.exit(dev.off(), add = TRUE)
@@ -749,14 +780,12 @@ report_gfb3 <- function(data,
     return(invisible(NULL))
   }
 
-  # ── Fallback 2: base-R ───────────────────────────────────────────────────────
   png(path, width = 700, height = 480, res = 96)
   on.exit(dev.off(), add = TRUE)
   plot(tbl$Longitude, tbl$Latitude,
        xlim = xlim, ylim = ylim,
-       pch  = 21, bg = "#E84855", col = "#2E4057", cex = 1.4,
-       xlab = "Longitude", ylab = "Latitude",
-       main = "Plot Locations")
+       pch = 21, bg = "#E84855", col = "#2E4057", cex = 1.4,
+       xlab = "Longitude", ylab = "Latitude", main = "Plot Locations")
   if (requireNamespace("maps", quietly = TRUE))
     maps::map("world", add = TRUE, col = "#AAAAAA")
 

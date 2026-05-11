@@ -1,4 +1,4 @@
-import sys, csv, os
+import sys, csv, os, glob
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
@@ -13,12 +13,14 @@ def read_csv(name):
     with open(f"{tmp_dir}/{name}") as f:
         return list(csv.DictReader(f))
 
-meta    = {r["key"]: r["value"] for r in read_csv("meta.csv")}
-status  = read_csv("status.csv")
-flags   = read_csv("flags.csv")
-dbh     = read_csv("dbh.csv")
-growth  = read_csv("growth.csv")
-ba      = read_csv("ba.csv")
+meta   = {r["key"]: r["value"] for r in read_csv("meta.csv")}
+status = read_csv("status.csv")
+flags  = read_csv("flags.csv")
+dbh    = read_csv("dbh.csv")
+growth = read_csv("growth.csv")
+ba     = read_csv("ba.csv")
+unidentified_path = os.path.join(tmp_dir, "unidentified.csv")
+unidentified = read_csv("unidentified.csv") if os.path.exists(unidentified_path) else None
 
 # Plot metadata is optional — only loaded when the file exists
 plot_meta_path = os.path.join(tmp_dir, "plot_metadata.csv")
@@ -27,7 +29,7 @@ plot_meta = read_csv("plot_metadata.csv") if os.path.exists(plot_meta_path) else
 doc    = SimpleDocTemplate(out_path, pagesize=letter,
                             leftMargin=72, rightMargin=72,
                             topMargin=72, bottomMargin=72,
-                            title = "GFB3 Report")
+                            title="GFB3 Report")
 styles = getSampleStyleSheet()
 
 # ── Styles ───────────────────────────────────────────────────────────────────
@@ -65,13 +67,11 @@ story.append(HRFlowable(width="100%", thickness=1,
 story.append(Spacer(1, 12))
 
 # ── Overview ─────────────────────────────────────────────────────────────────
-# Pull country / site info from plot_meta when available for a richer overview
 if plot_meta:
     countries   = sorted(set(r["Country"] for r in plot_meta if r.get("Country")))
     sites       = sorted(set(r["Site"]    for r in plot_meta if r.get("Site")))
-    country_str = ", ".join(countries) if countries else "—"
-    site_str    = ", ".join(sites)     if sites    else "—"
-    # When we have plot metadata the country/site replaces the generic "N plot(s)" phrase
+    country_str = ", ".join(countries) if countries else "\u2014"
+    site_str    = ", ".join(sites)     if sites    else "\u2014"
     overview_text = (
         f"This report summarises the diagnostic results for the <b>{meta['dataset_name']}</b> "
         f"dataset formatted to GFB3 standard. The dataset contains <b>{int(meta['n_rows']):,}</b> "
@@ -93,10 +93,8 @@ story.append(KeepTogether([
     Spacer(1, 10),
 ]))
 
-# ── Plot Locations (only when plot_metadata was supplied) ────────────────────
+# ── Plot Locations ───────────────────────────────────────────────────────────
 if plot_meta:
-    # Decide which columns to show and their display widths.
-    # Long columns (PlotID, Site) get more space; coords get less.
     display_cols   = ["Country", "Site", "PlotID", "PI", "Censuses",
                       "Size", "Latitude", "Longitude"]
     col_widths_map = {
@@ -110,7 +108,6 @@ if plot_meta:
         "Latitude":  52,
         "Longitude": 52,
     }
-    # Keep only columns that actually exist in the data
     display_cols = [c for c in display_cols if c in (plot_meta[0].keys())]
     col_widths   = [col_widths_map.get(c, 60) for c in display_cols]
 
@@ -202,15 +199,14 @@ if os.path.exists(growth_hist_path):
 growth_block.append(Spacer(1, 10))
 story.append(KeepTogether(growth_block))
 
-
 # ── Basal Area by Plot x Census ───────────────────────────────────────────────
 ba_flagged = [r for r in ba if r["BA_flag"] != "ok"]
 
 ba_block = [
-    Paragraph("Basal Area by Plot x Census (m\u00b2/ha)", h2),
+    Paragraph("Basal Area by Plot \u00d7 Census (m\u00b2/ha)", h2),
     Paragraph(
         "Stand basal area (BA) computed per plot x census combination for live "
-        "trees (Status 0). BA 60\u201399 m\u00b2/ha is flagged as a warning "
+        "trees (Status 0). BA 51\u201399 m\u00b2/ha is flagged as a warning "
         "(higher than typical); BA \u2265 100 m\u00b2/ha is a critical failure "
         "(implausible). Expected range: 0\u201350 m\u00b2/ha.", body),
     Spacer(1, 6),
@@ -218,7 +214,7 @@ ba_block = [
 
 if not ba_flagged:
     ba_block.append(Paragraph(
-        "\u2713 All plot x census BA values are within the expected range (&lt; 50 m\u00b2/ha).",
+        "\u2713 All plot x census BA values are within the expected range (\u2264 50 m\u00b2/ha).",
         body))
 else:
     flag_colors = {"critical": "#FFDDC1", "warning": "#FFF9C4"}
@@ -233,11 +229,65 @@ else:
     ba_tbl.setStyle(ba_style)
     ba_block.append(ba_tbl)
 
-ba_bar_path = os.path.join(tmp_dir, "ba_bar.png")
-if os.path.exists(ba_bar_path):
-    ba_block += [Spacer(1, 8), Image(ba_bar_path, width=450, height=267)]
-ba_block.append(Spacer(1, 10))
+# chunked BA barplots — title kept with image on same page
+ba_bar_paths = sorted(glob.glob(os.path.join(tmp_dir, "ba_bar_part*.png")))
+n_ba = len(ba_bar_paths)
 story.append(KeepTogether(ba_block))
+for idx, bp in enumerate(ba_bar_paths):
+    chunk_title = (f"Basal Area by Plot \u00d7 Census ({idx+1}/{n_ba})"
+                   if n_ba > 1 else "Basal Area by Plot \u00d7 Census")
+    story.append(KeepTogether([
+        Spacer(1, 8),
+        Paragraph(f"<i>{chunk_title}</i>", small),
+        Image(bp, width=450, height=225),
+        Spacer(1, 10),
+    ]))
+
+# ── Trees per Hectare by Plot x Census ───────────────────────────────────────
+tph_path = os.path.join(tmp_dir, "tph.csv")
+if os.path.exists(tph_path):
+    tph = read_csv("tph.csv")
+    tph_block = [
+        Paragraph("Trees per Hectare by Plot \u00d7 Census", h2),
+        Paragraph(
+            "Stem density (TPH) computed per plot x census combination for live "
+            "trees (Status 0). Values reflect the number of stems per hectare "
+            "scaled from plot area.", body),
+        Spacer(1, 6),
+    ]
+    # chunked TPH barplots — title kept with image on same page
+    tph_bar_paths = sorted(glob.glob(os.path.join(tmp_dir, "tph_bar_part*.png")))
+    n_tph = len(tph_bar_paths)
+    story.append(KeepTogether(tph_block))
+    for idx, tp in enumerate(tph_bar_paths):
+        chunk_title = (f"Trees per Hectare by Plot \u00d7 Census ({idx+1}/{n_tph})"
+                       if n_tph > 1 else "Trees per Hectare by Plot \u00d7 Census")
+        story.append(KeepTogether([
+            Spacer(1, 8),
+            Paragraph(f"<i>{chunk_title}</i>", small),
+            Image(tp, width=450, height=225),
+            Spacer(1, 10),
+        ]))
+        
+        
+# ── Unidentified Species by Plot ──────────────────────────────────────────────
+if unidentified:
+    u_data = [["PlotID", "Unidentified Trees"]] + [
+        [r["PlotID"], r["n_unidentified"]] for r in unidentified
+    ]
+    u_tbl = Table(u_data, colWidths=[180, 120], splitByRow=True)
+    u_tbl.setStyle(tbl_style())
+    n_unid = sum(int(r["n_unidentified"]) for r in unidentified)
+    story.append(KeepTogether([
+        Paragraph("Unidentified Species by Plot", h2),
+        Paragraph(
+            f"{n_unid} tree(s) were recorded with an unidentified species label. "
+            "These are excluded from the malformed-species flag but should be "
+            "reviewed if species-level analyses are planned.", body),
+        Spacer(1, 6),
+        u_tbl,
+        Spacer(1, 14),
+    ]))
 
 # ── Data Quality Flags ────────────────────────────────────────────────────────
 sev_colors = {"critical": "#FFDDC1", "warning": "#FFF9C4", "info": "#E8F5E9"}
