@@ -6,11 +6,10 @@
 \usage{
 report_gfb3(
   data,
+  unidentified_label = "Unidentified sp.",
   curation_log = NULL,
   metadata = NULL,
-  export_pdf = FALSE,
-  export_xlsx = FALSE,
-  export_map = FALSE,
+  export = c("pdf", "xlsx", "map"),
   output_dir = "../exports",
   dataset_name = NULL
 )
@@ -21,6 +20,10 @@ or equivalent. Must contain columns: \code{PlotID}, \code{PA},
 \code{Latitude}, \code{Longitude}, \code{TreeID}, \code{Species},
 \code{Status}, \code{DBH}, \code{YR}, \code{PrevDBH}, \code{PrevYR}.
 DBH is assumed to be in centimetres.}
+
+\item{unidentified_label}{Character. Species label used to mark unidentified
+trees. Rows matching this value are excluded from the malformed-species
+flag and summarised separately. Default \code{"Unidentified sp."}.}
 
 \item{curation_log}{Character string (or \code{NULL}). A free-text narrative
 describing the curation and data-wrangling decisions applied to the dataset
@@ -38,21 +41,10 @@ console report and, if exports are requested, a "Plot Locations" section
 with a summary table and a static map is added to the PDF / Excel workbook.
 Only the first occurrence of each PlotID is used (i.e. one row per plot).}
 
-\item{export_pdf}{Logical. If \code{TRUE}, a narrative PDF report is written
-to \code{output_dir}. Requires Python with \code{reportlab} installed.
-Default \code{FALSE}.}
-
-\item{export_xlsx}{Logical. If \code{TRUE}, an Excel workbook with diagnostic
-tables is written to \code{output_dir}. Requires Python with
-\code{openpyxl} installed. Default \code{FALSE}.}
-
-\item{export_map}{Logical. If \code{TRUE} and \code{metadata} is
-supplied, a self-contained interactive HTML map
-(\code{<dataset_name>_plot_map.html}) is saved to \code{output_dir}.
-The HTML is fully interactive (pan, zoom) and self-contained in a single
-file. The PDF / Excel report always uses a static PNG of the same map
-regardless of this setting. Requires \pkg{htmlwidgets}.
-Default \code{FALSE}.}
+\item{export}{Character vector controlling which outputs are exported.
+Any combination of \code{"pdf"}, \code{"xlsx"}, and \code{"map"}.
+Defaults to all three. Pass \code{character(0)} or \code{NULL} to skip
+all exports and run diagnostics only.}
 
 \item{output_dir}{Character. Directory where exported files are saved.
 Defaults the exports folder in the parent directory.}
@@ -62,65 +54,11 @@ headers. Defaults to \code{"gfb3_dataset"}.}
 }
 \value{
 Invisibly returns a named list with elements \code{status},
-  \code{ba}, \code{dbh}, \code{growth}, \code{flags}, \code{na_pa},
-  \code{na_species}, \code{curation_log}, and \code{metadata}.
+  \code{ba}, \code{tph}, \code{dbh}, \code{growth}, \code{flags},
+  \code{na_pa}, \code{na_species}, \code{curation_log}, and \code{metadata}.
 }
 \description{
 Runs a suite of diagnostic checks on a GFB3-formatted dataset and prints a
 structured report to the console. Optionally exports a narrative PDF report
 and/or an Excel workbook with diagnostic tables.
-}
-\section{Basal area diagnostics}{
-
-Stand basal area (BA) is computed per plot x census combination as the sum
-of cross-sectional areas of all live trees (\code{Status == "0"}) divided by
-plot area (\code{PA}, in hectares). DBH is assumed to be in centimetres:
-\deqn{BA = \sum \pi (DBH / 200)^2 \; / \; PA}
-Plot x census combinations with \eqn{50 < BA < 100} m\eqn{^2}/ha are
-flagged as warnings ("higher than typical"); those with \eqn{BA \ge 100}
-m\eqn{^2}/ha are flagged as critical failures ("implausible BA").
-}
-
-\section{Map export dependencies}{
-
-When \code{metadata} is supplied and either \code{export_pdf} or
-\code{export_xlsx} is \code{TRUE}, \code{report_gfb3()} will attempt to
-render a Leaflet map screenshot using \pkg{leaflet}, \pkg{mapview}, and
-\pkg{webshot2} (which requires a headless Chromium browser). These packages
-are not installed with \pkg{facai} by default. Run
-\code{\link{facai_setup_map}()} once after installing the package to set
-everything up:
-
-\preformatted{
-facai_setup_map()
-}
-
-If these packages are not available, the map will fall back to a static
-\pkg{ggplot2} / \pkg{rnaturalearth} plot, and then to a base-R plot if
-those are also absent. The rest of the report is unaffected in all cases.
-}
-
-\examples{
-\dontrun{
-my_notes <- "
-- Removed 14 stems with DBH < 1 cm (measurement artefacts confirmed by field team).
-- Corrected plot coordinates for PA 07 (GPS drift in 2018 census; adjusted to match
-  2014 reference positions).
-- Harmonised species names against the TNRS database; 32 morphospecies retained as-is.
-- Status recoded from local 3-class scheme (V/M/R) to GFB3 (0/1/2).
-"
-
-meta <- make_plot_metadata(data = my_gfb3, pi = "Jane Smith",
-                           pie = "j.smith@uni.edu")
-
-result <- report_gfb3(paracou_gfb3,
-                      curation_log  = my_notes,
-                      metadata      = meta,
-                      export_pdf    = TRUE,
-                      export_xlsx   = TRUE,
-                      export_map    = TRUE,
-                      output_dir    = "reports/",
-                      dataset_name  = "paracou_01")
-}
-
 }

@@ -40,7 +40,7 @@
 #'   \code{na_pa}, \code{na_species}, \code{curation_log}, and \code{metadata}.
 #'
 #' @importFrom dplyr count mutate select filter summarise pull arrange group_by
-#'   ungroup n_distinct distinct left_join cumany first
+#'   ungroup n_distinct distinct left_join cumany first lag
 #' @importFrom cli cli_h1 cli_h2 cli_bullets cli_alert_warning cli_alert_success
 #'   cli_alert_danger cli_verbatim
 #' @export
@@ -100,8 +100,10 @@ report_gfb3 <- function(data,
     select(Status, Label, n, pct)
 
   # ── 3. Missing data (scalar counts) ─────────────────────────────────────────
+  n_missing_yr      <- sum(is.na(data$YR))
   n_missing_dbh     <- sum(is.na(data$DBH))
   n_missing_prevdbh <- sum(is.na(data$PrevDBH))
+
   n_missing_species <- data |>
     filter(is.na(Species) |
              (!grepl("^[A-Z][a-z]+ [a-z]", Species) &
@@ -132,6 +134,53 @@ report_gfb3 <- function(data,
     group_by(PlotID) |>
     summarise(n_unidentified = n_distinct(TreeID), .groups = "drop") |>
     arrange(desc(n_unidentified))
+
+  # ── 3c. Prev consistency check (lagged-based) ────────────────────────────────
+  # For each row, compute the lagged DBH and YR within PlotID x TreeID.
+  # Flag rows where:
+  #   (a) PrevDBH is populated but doesn't match lag(DBH)
+  #   (b) PrevYR  is populated but doesn't match lag(YR)
+  #   (c) PrevDBH is NA but a valid lag(DBH) exists and current DBH is valid
+  #       (genuine orphan — missing linkage to previous census)
+  #   (d) PrevYR  is NA but a valid lag(YR)  exists and current DBH is valid
+  #
+  # The Status == "0" guard on (c)/(d) avoids false positives on dead/missing
+  # rows where NA PrevDBH may be structurally expected.
+
+  prev_check <- data |>
+    arrange(PlotID, TreeID, YR) |>
+    group_by(PlotID, TreeID) |>
+    mutate(
+      lag_DBH = lag(DBH),
+      lag_YR  = lag(YR)
+    ) |>
+    ungroup()
+
+  n_prevdbh_mismatch <- prev_check |>
+    filter(!is.na(PrevDBH) & !is.na(lag_DBH) & PrevDBH != lag_DBH) |>
+    nrow()
+
+  n_prevyr_mismatch <- prev_check |>
+    filter(!is.na(PrevYR) & !is.na(lag_YR) & PrevYR != lag_YR) |>
+    nrow()
+
+  n_prevdbh_orphan <- prev_check |>
+    filter(Status == "0", is.na(PrevDBH) & !is.na(lag_DBH) & !is.na(DBH)) |>
+    nrow()
+
+  n_prevyr_orphan <- prev_check |>
+    filter(Status == "0", is.na(PrevYR) & !is.na(lag_YR) & !is.na(DBH)) |>
+    nrow()
+
+  # Combined count of any Prev inconsistency (union — rows flagged by any condition)
+  n_inconsistent_prev <- prev_check |>
+    filter(
+      (!is.na(PrevDBH) & !is.na(lag_DBH) & PrevDBH != lag_DBH) |
+        (!is.na(PrevYR)  & !is.na(lag_YR)  & PrevYR  != lag_YR)  |
+        (Status == "0" & is.na(PrevDBH) & !is.na(lag_DBH) & !is.na(DBH)) |
+        (Status == "0" & is.na(PrevYR)  & !is.na(lag_YR)  & !is.na(DBH))
+    ) |>
+    nrow()
 
   # ── 4. DBH summary ───────────────────────────────────────────────────────────
   dbh_hist_path <- tempfile("dbh_hist_", fileext = ".png")
@@ -173,13 +222,42 @@ report_gfb3 <- function(data,
   n_small <- sum(data$DBH < 10, na.rm = TRUE)
 
   # ── 9. Basal area per plot x census ──────────────────────────────────────────
-  ba_tbl <- data |>
+  # Group by Census if available (handles multi-year censuses), otherwise by YR.
+  # When only one census group is present and PrevDBH/PrevYR are populated,
+  # reconstruct the previous census from Prev columns and prepend it.
+  has_census   <- "Census" %in% names(data)
+  has_prev     <- all(c("PrevDBH", "PrevYR") %in% names(data))
+  n_census_grps <- if (has_census) {
+    dplyr::n_distinct(data$Census, na.rm = TRUE)
+  } else {
+    dplyr::n_distinct(floor(data$YR), na.rm = TRUE)
+  }
+
+  # Reconstruct previous census rows from Prev columns when only one census
+  # group is present in the data (i.e. the first census was folded into PrevDBH/PrevYR)
+  data_for_ba <- if (has_prev && n_census_grps == 1L) {
+    prev_census_rows <- data |>
+      filter(!is.na(PrevDBH), !is.na(PrevYR), !is.na(PA)) |>
+      mutate(
+        DBH    = PrevDBH,
+        YR     = PrevYR,
+        Status = "0",
+        Census = if (has_census) min(Census, na.rm = TRUE) - 1L else NA_integer_
+      )
+    bind_rows(prev_census_rows, data)
+  } else {
+    data
+  }
+
+  ba_tbl <- data_for_ba |>
     filter(Status == "0", !is.na(DBH), !is.na(PA), PA > 0) |>
-    group_by(PlotID, YR) |>
+    group_by(PlotID, YR_grp = if (has_census) Census else floor(YR)) |>
     summarise(
-      BA = sum(pi * (DBH / 200)^2, na.rm = TRUE) / first(PA),
+      BA  = sum(pi * (DBH / 200)^2, na.rm = TRUE) / first(PA),
+      YR  = mean(YR, na.rm = TRUE),
       .groups = "drop"
     ) |>
+    rename(Census_grp = YR_grp) |>
     mutate(
       BA      = round(BA, 3),
       BA_flag = case_when(
@@ -203,15 +281,10 @@ report_gfb3 <- function(data,
       )
     )
 
-  # chunk_size: target max bars per figure, chosen so chunks are roughly even.
-  # We pick the smallest number of figures needed to keep each under 25 bars,
-  # then recalculate chunk_size as total / n_figures so distribution is even.
   .ba_total     <- nrow(ba_bar)
   .n_ba_figs    <- max(1L, ceiling(.ba_total / 25L))
   chunk_size    <- ceiling(.ba_total / .n_ba_figs)
 
-  # Group complete plots into chunks so no plot is split across figures.
-  # Greedy: keep adding plots until the next one would exceed chunk_size bars.
   ba_plot_groups <- local({
     plots   <- unique(ba_bar$PlotID)
     n_bars  <- sapply(plots, function(p) sum(ba_bar$PlotID == p))
@@ -276,21 +349,24 @@ report_gfb3 <- function(data,
   ba_plot_paths <- unlist(ba_plot_paths)
 
   # ── 9c. Trees per hectare by plot x census ────────────────────────────────────
-  tph_tbl <- data |>
+  # Uses data_for_ba which already includes reconstructed previous census rows
+  # when only one census group was present in the original data.
+  tph_tbl <- data_for_ba |>
     filter(Status == "0", !is.na(DBH), !is.na(PA)) |>
-    group_by(PlotID, YR) |>
+    group_by(PlotID, YR_grp = if (has_census) Census else floor(YR)) |>
     summarise(
       n_trees = n(),
       PA      = first(PA),
       TPH     = n_trees / PA,
+      YR      = mean(YR, na.rm = TRUE),
       .groups = "drop"
     ) |>
+    rename(Census_grp = YR_grp) |>
     arrange(PlotID, YR)
 
   tph_bar <- tph_tbl |>
     arrange(PlotID, YR)
 
-  # Same greedy plot-grouping for TPH
   tph_plot_groups <- local({
     plots   <- unique(tph_bar$PlotID)
     n_bars  <- sapply(plots, function(p) sum(tph_bar$PlotID == p))
@@ -359,8 +435,9 @@ report_gfb3 <- function(data,
   # ── Flags table (for export) ─────────────────────────────────────────────────
   flags_tbl <- tibble::tibble(
     Flag = c(
+      "Missing YR",
       "Missing DBH",
-      "Missing PrevDBH",
+      "Missing PrevDBH (all; expected for first intervals)",
       "Missing/malformed Species",
       "DBH < 10 cm",
       "Negative DBH growth",
@@ -369,24 +446,67 @@ report_gfb3 <- function(data,
       "Duplicate TreeID x YR",
       "Zombie trees (alive after death)",
       "BA 51-100 m2/ha (higher than typical)",
-      "BA >= 100 m2/ha (implausible)"
+      "BA >= 100 m2/ha (implausible)",
+      "PrevDBH value mismatches lag(DBH)",
+      "PrevYR value mismatches lag(YR)",
+      "PrevDBH missing but valid lag(DBH) exists (alive rows)",
+      "PrevYR missing but valid lag(YR) exists (alive rows)"
     ),
     Count = c(
-      n_missing_dbh, n_missing_prevdbh, n_missing_species,
-      n_small, n_neg_growth, n_zero_growth, n_fast,
-      n_dups, n_zombie,
-      n_ba_warning, n_ba_critical
+      n_missing_yr,
+      n_missing_dbh,
+      n_missing_prevdbh,
+      n_missing_species,
+      n_small,
+      n_neg_growth,
+      n_zero_growth,
+      n_fast,
+      n_dups,
+      n_zombie,
+      n_ba_warning,
+      n_ba_critical,
+      n_prevdbh_mismatch,
+      n_prevyr_mismatch,
+      n_prevdbh_orphan,
+      n_prevyr_orphan
     ),
     Severity = c(
-      "warning", "info", "warning",
-      "warning", "warning", "info", "warning",
-      "critical", "critical",
-      "warning", "critical"
+      "critical",
+      "warning",
+      "info",
+      "warning",
+      "warning",
+      "warning",
+      "info",
+      "warning",
+      "critical",
+      "critical",
+      "warning",
+      "critical",
+      "critical",
+      "critical",
+      "critical",
+      "critical"
     )
   )
 
-  hard_fails <- c(n_dups, n_ba_critical)
-  soft_flags <- c(n_missing_dbh, n_small, n_neg_growth, n_fast, n_zombie, n_ba_warning)
+  hard_fails <- c(
+    n_missing_yr,
+    n_dups,
+    n_ba_critical,
+    n_zombie,
+    n_prevdbh_mismatch,
+    n_prevyr_mismatch,
+    n_prevdbh_orphan,
+    n_prevyr_orphan
+  )
+  soft_flags <- c(
+    n_missing_dbh,
+    n_small,
+    n_neg_growth,
+    n_fast,
+    n_ba_warning
+  )
 
   verdict <- dplyr::case_when(
     any(hard_fails > 0) ~ "FAIL: critical issues must be resolved before use.",
@@ -481,17 +601,37 @@ report_gfb3 <- function(data,
     else cli::cli_alert_success("0 {msg}")
   }
 
-  flag(n_missing_dbh,     "rows with missing DBH")
-  flag(n_missing_prevdbh, "rows with missing PrevDBH (expected for recruits/first intervals)")
-  flag(n_missing_species, "trees with missing or malformed Species")
-  flag(n_small,           "rows with DBH < 10 cm (below GFB3 threshold)")
-  flag(n_neg_growth,      "rows with negative DBH growth")
-  flag(n_zero_growth,     "rows with zero DBH growth")
-  flag(n_fast,            "rows with annual growth > 5 cm/yr (possible errors)")
-  flag(n_dups,            "duplicate TreeID x YR combinations")
-  flag(n_zombie,          "alive/recruit records following a death")
-  flag(n_ba_warning,      "plot x census combinations with BA 51-100 m\u00b2/ha (higher than typical)")
-  flag(n_ba_critical,     "plot x census combinations with BA \u2265 100 m\u00b2/ha (implausible)")
+  flag_critical <- function(n, msg) {
+    if (n > 0) cli::cli_alert_danger("{n} {msg}")
+    else cli::cli_alert_success("0 {msg}")
+  }
+
+  flag_critical(n_missing_yr,         "rows with missing YR — no temporal placement possible")
+  flag(n_missing_dbh,                 "rows with missing DBH")
+  flag(n_missing_prevdbh,             "rows with missing PrevDBH (expected for recruits/first intervals)")
+  flag(n_missing_species,             "trees with missing or malformed Species")
+  flag(n_small,                       "rows with DBH < 10 cm (below GFB3 threshold)")
+  flag(n_neg_growth,                  "rows with negative DBH growth")
+  flag(n_zero_growth,                 "rows with zero DBH growth")
+  flag(n_fast,                        "rows with annual growth > 5 cm/yr (possible errors)")
+  flag_critical(n_dups,               "duplicate TreeID x YR combinations")
+  flag_critical(n_zombie,             "alive/recruit records following a death")
+  flag(n_ba_warning,                  "plot x census combinations with BA 51-100 m\u00b2/ha (higher than typical)")
+  flag_critical(n_ba_critical,        "plot x census combinations with BA \u2265 100 m\u00b2/ha (implausible)")
+  flag_critical(n_prevdbh_mismatch,   "rows where PrevDBH does not match lag(DBH)")
+  flag_critical(n_prevyr_mismatch,    "rows where PrevYR does not match lag(YR)")
+  flag_critical(n_prevdbh_orphan,     "alive rows where PrevDBH is NA but lag(DBH) exists")
+  flag_critical(n_prevyr_orphan,      "alive rows where PrevYR is NA but lag(YR) exists")
+
+  cli::cli_h2("Prev Consistency Summary")
+  if (n_inconsistent_prev == 0) {
+    cli::cli_alert_success("All PrevDBH/PrevYR values are consistent with lagged records.")
+  } else {
+    cli::cli_alert_danger(
+      "{n_inconsistent_prev} rows have at least one Prev inconsistency \\
+      (see flags above for breakdown)."
+    )
+  }
 
   cli::cli_h2("Missing PA by Plot")
   if (nrow(na_pa_tbl) == 0) {
@@ -548,7 +688,7 @@ report_gfb3 <- function(data,
     readr::write_csv(tph_tbl,        file.path(tmp_dir, "tph.csv"))
     readr::write_csv(na_pa_tbl,      file.path(tmp_dir, "na_pa.csv"))
     readr::write_csv(na_species_tbl, file.path(tmp_dir, "na_species.csv"))
-    readr::write_csv(unid_tbl, file.path(tmp_dir, "unidentified.csv"))
+    readr::write_csv(unid_tbl,       file.path(tmp_dir, "unidentified.csv"))
     readr::write_csv(dbh_sum_obj,    file.path(tmp_dir, "dbh.csv"))
     readr::write_csv(as.data.frame(growth_sum_obj), file.path(tmp_dir, "growth.csv"))
 
@@ -681,17 +821,23 @@ report_gfb3 <- function(data,
     curation_log = curation_log,
     metadata     = plot_meta_tbl,
     flags = list(
-      missing_dbh     = n_missing_dbh,
-      missing_prevdbh = n_missing_prevdbh,
-      missing_species = n_missing_species,
-      small_dbh       = n_small,
-      neg_growth      = n_neg_growth,
-      zero_growth     = n_zero_growth,
-      fast_growth     = n_fast,
-      duplicates      = n_dups,
-      zombies         = n_zombie,
-      ba_warning      = n_ba_warning,
-      ba_critical     = n_ba_critical
+      missing_yr          = n_missing_yr,
+      missing_dbh         = n_missing_dbh,
+      missing_prevdbh     = n_missing_prevdbh,
+      missing_species     = n_missing_species,
+      small_dbh           = n_small,
+      neg_growth          = n_neg_growth,
+      zero_growth         = n_zero_growth,
+      fast_growth         = n_fast,
+      duplicates          = n_dups,
+      zombies             = n_zombie,
+      ba_warning          = n_ba_warning,
+      ba_critical         = n_ba_critical,
+      prevdbh_mismatch    = n_prevdbh_mismatch,
+      prevyr_mismatch     = n_prevyr_mismatch,
+      prevdbh_orphan      = n_prevdbh_orphan,
+      prevyr_orphan       = n_prevyr_orphan,
+      inconsistent_prev   = n_inconsistent_prev
     )
   ))
 }

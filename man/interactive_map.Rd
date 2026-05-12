@@ -4,13 +4,17 @@
 \alias{interactive_map}
 \title{Create an Interactive Leaflet Map with Multiple Basemaps}
 \usage{
-interactive_map(data, countries = NULL, id_col = NULL, popup_cols = NULL)
+interactive_map(
+  data = NULL,
+  countries = NULL,
+  id_col = NULL,
+  popup_cols = NULL
+)
 }
 \arguments{
-\item{data}{An \code{sf} object or a data frame/tibble/data.table containing
-a \code{geometry} column. If the CRS is not specified or not WGS84, the
-function will attempt to auto-detect the UTM zone based on coordinate
-ranges and transform to WGS84 (EPSG:4326) for display.}
+\item{data}{An \code{sf} object, a data frame/tibble with \code{Latitude} and
+\code{Longitude} columns in decimal degrees (WGS84), or \code{NULL}
+(default) to create an empty basemap.}
 
 \item{countries}{Character vector of country names to overlay as boundaries.
 Country names should match those recognized by \code{rnaturalearth::ne_countries()}.
@@ -18,8 +22,7 @@ Default is \code{NULL} (no country boundaries displayed). Examples:
 \code{"honduras"}, \code{c("honduras", "guatemala", "nicaragua")}.}
 
 \item{id_col}{Character string specifying the column name to use as a unique
-identifier in popups. Currently not implemented but reserved for future use.
-Default is \code{NULL}.}
+identifier in popups. Currently reserved for future use. Default \code{NULL}.}
 
 \item{popup_cols}{Character vector specifying which columns to display in
 the popup when clicking on features. If \code{NULL} (default), the function
@@ -27,13 +30,14 @@ automatically selects the first 5 non-geometry columns.}
 }
 \value{
 A \code{leaflet} object. To save as a standalone HTML file use:
-  \code{htmlwidgets::saveWidget(map, "map.html", selfcontained = TRUE)}
-  The \code{selfcontained = TRUE} argument is important — it bundles all
-  JS/CSS so the map renders correctly when opened from a local file path.
+  \code{htmlwidgets::saveWidget(map, "map.html", selfcontained = TRUE)}.
+  The \code{selfcontained = TRUE} argument bundles all JS/CSS so the map
+  renders correctly when opened from a local file path.
 }
 \description{
-This function creates an interactive leaflet map from spatial data with
-automatic CRS detection and transformation to WGS84. It provides multiple
-basemap options accessible through a radio button control (similar to Google
-Maps layer switcher) and optional country boundary overlays.
+Creates an interactive leaflet map from spatial data with automatic CRS
+detection and transformation to WGS84. Accepts an \code{sf} object, a plain
+data frame with \code{Latitude} and \code{Longitude} columns, or no data at
+all (returns an empty basemap ready for piped additions via \code{add_plots()}
+or \code{leaflet::addCircleMarkers()} etc.).
 }

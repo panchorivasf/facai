@@ -7,9 +7,9 @@
 export_data_multi(
   data,
   name,
-  dir = ".",
+  output_dir = "../exports",
   prefix = "in_",
-  date_suffix = FALSE,
+  date_suffix = TRUE,
   dry_run = FALSE
 )
 }
@@ -20,13 +20,13 @@ export_data_multi(
 (e.g., `"honduras"`). Output files will be named
 `"<prefix><name>[_YYYYMMDD].<ext>"`.}
 
-\item{dir}{Output directory. Defaults to the working directory (`"."`).}
+\item{output_dir}{Output directory. Defaults to the working directory (`"."`).}
 
 \item{prefix}{File name prefix. Defaults to `"in_"`.}
 
 \item{date_suffix}{Logical. If \code{TRUE}, appends the current date as
 \code{_YYYYMMDD} to the file stem before the extension. Defaults to
-\code{FALSE}.}
+\code{TRUE}.}
 
 \item{dry_run}{Logical. If \code{TRUE}, prints the file paths that would be
 written without actually writing any files. Defaults to \code{FALSE}.}
@@ -41,6 +41,6 @@ Export a table as Parquet, CSV, and Excel files
 \dontrun{
 export_data_multi(honduras_clean, "honduras")
 export_data_multi(honduras_clean, "honduras", date_suffix = TRUE)
-export_data_multi(honduras_clean, "honduras", dir = "output/gfb3", dry_run = TRUE)
+export_data_multi(honduras_clean, "honduras", output_dir = "output/gfb3", dry_run = TRUE)
 }
 }

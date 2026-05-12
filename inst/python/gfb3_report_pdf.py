@@ -294,7 +294,7 @@ sev_colors = {"critical": "#FFDDC1", "warning": "#FFF9C4", "info": "#E8F5E9"}
 f_data = [["Flag", "Count", "Severity"]] + [
     [r["Flag"], r["Count"], r["Severity"]] for r in flags
 ]
-f_tbl = Table(f_data, colWidths=[270, 70, 80], splitByRow=False)
+f_tbl = Table(f_data, colWidths=[270, 70, 80], splitByRow=True)
 base_style = tbl_style()
 for i, r in enumerate(flags, start=1):
     bg = sev_colors.get(r["Severity"], "#FFFFFF")
