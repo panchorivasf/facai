@@ -156,13 +156,10 @@ report_gfb3 <- function(data,
     ) |>
     ungroup()
 
-  n_prevdbh_mismatch <- prev_check |>
-    filter(!is.na(PrevDBH) & !is.na(lag_DBH) & PrevDBH != lag_DBH) |>
-    nrow()
-
-  n_prevyr_mismatch <- prev_check |>
-    filter(!is.na(PrevYR) & !is.na(lag_YR) & PrevYR != lag_YR) |>
-    nrow()
+  n_prevdbh_mismatch <- nrow(filter(prev_check, Status == "0",
+                                    !is.na(PrevDBH) & !is.na(lag_DBH) & PrevDBH != lag_DBH))
+  n_prevyr_mismatch <- nrow(filter(prev_check, Status == "0",
+                                   !is.na(PrevYR) & !is.na(lag_YR) & PrevYR != lag_YR))
 
   n_prevdbh_orphan <- prev_check |>
     filter(Status == "0", is.na(PrevDBH) & !is.na(lag_DBH) & !is.na(DBH)) |>
@@ -173,14 +170,14 @@ report_gfb3 <- function(data,
     nrow()
 
   # Combined count of any Prev inconsistency (union — rows flagged by any condition)
-  n_inconsistent_prev <- prev_check |>
-    filter(
-      (!is.na(PrevDBH) & !is.na(lag_DBH) & PrevDBH != lag_DBH) |
-        (!is.na(PrevYR)  & !is.na(lag_YR)  & PrevYR  != lag_YR)  |
-        (Status == "0" & is.na(PrevDBH) & !is.na(lag_DBH) & !is.na(DBH)) |
-        (Status == "0" & is.na(PrevYR)  & !is.na(lag_YR)  & !is.na(DBH))
-    ) |>
-    nrow()
+  n_inconsistent_prev <- nrow(filter(prev_check,
+                                     Status == "0" & (
+                                       (!is.na(PrevDBH) & !is.na(lag_DBH) & PrevDBH != lag_DBH) |
+                                         (!is.na(PrevYR)  & !is.na(lag_YR)  & PrevYR  != lag_YR)  |
+                                         (is.na(PrevDBH)  & !is.na(lag_DBH) & !is.na(DBH))        |
+                                         (is.na(PrevYR)   & !is.na(lag_YR)  & !is.na(DBH))
+                                     )
+  ))
 
   # ── 4. DBH summary ───────────────────────────────────────────────────────────
   dbh_hist_path <- tempfile("dbh_hist_", fileext = ".png")
