@@ -2,7 +2,7 @@
 % Please edit documentation in R/add_plots.R
 \name{add_plots}
 \alias{add_plots}
-\title{Add plot markers to a leaflet map}
+\title{Add plot markers to a Leaflet map}
 \usage{
 add_plots(
   map,
@@ -10,37 +10,65 @@ add_plots(
   color = "green",
   size = 4,
   opacity = 0.9,
-  group = "New - Received"
+  group = "New - Received",
+  popup_fields = c("Country", "Site", "PI", "PIe", "Dataset", "Censuses", "PlotID",
+    "PlotArea")
 )
 }
 \arguments{
-\item{map}{A leaflet map object, as produced by \code{\link[leaflet]{leaflet}}
-or any subsequent leaflet layer function.}
+\item{map}{A `leaflet` map object.}
 
-\item{plot_data}{A data frame or \code{sf} object containing plot-level data.
-Must include columns: \code{Country}, \code{Site}, \code{PlotID},
-\code{PI}, \code{PIe}, \code{Dataset}, \code{Size}, \code{Latitude},
-\code{Longitude}.}
+\item{plot_data}{A data frame containing plot-level data. Must include all
+columns referenced in `popup_fields`. When the data frame contains a
+\code{DatasetSize} column (as produced by \code{metadata_gfb3()}), its
+value is used for the *"Dataset size"* popup entry; otherwise the total
+number of rows in \code{plot_data} is used as a fallback.}
 
-\item{color}{Character. Marker fill color. Default \code{"green"}.}
+\item{color}{Character. Fill color for the circle markers. Default `"green"`.}
 
-\item{size}{Numeric. Marker radius in pixels. Default \code{4}.}
+\item{size}{Numeric. Radius of the circle markers in pixels. Default `4`.}
 
-\item{opacity}{Numeric. Marker fill opacity, between 0 and 1. Default \code{0.9}.}
+\item{opacity}{Numeric. Fill opacity of the markers, between 0 and 1. Default `0.9`.}
+
+\item{group}{Character. Layer group name for the markers, used for Leaflet
+layer controls. Default `"New - Received"`.}
+
+\item{popup_fields}{Character vector of field names to display in the marker
+popup, in the desired order. Each element should be a column name in
+`plot_data`, except for the following special values which are computed
+automatically:
+\describe{
+  \item{`"Dataset"`}{Total number of plots, taken from the
+    \code{DatasetSize} column when present, otherwise \code{nrow(plot_data)}.
+    Labelled *"Dataset size"* with a singular/plural suffix.}
+  \item{`"Censuses"`}{Census range derived from the `Censuses` column,
+    shown as a single value or `"min - max"` range.}
+  \item{`"PlotArea"`}{Plot area from the `PlotArea` column, labelled
+    *"Plot Area"* with a `" ha"` suffix.}
+}
+All other values are treated as bare column names and labelled with the
+column name itself. `NA` values are silently omitted.
+Defaults to `c("Country", "Site", "PI", "PIe", "Dataset", "Censuses",
+"PlotID", "PlotArea")`.}
 }
 \value{
-A leaflet map object with circle markers added.
+The input `map` object with circle markers added.
 }
 \description{
-A convenience wrapper around \code{\link[leaflet]{addCircleMarkers}} for
-displaying forest plot locations with standardised popups. Designed to be
-used in a leaflet pipe chain.
+Add plot markers to a Leaflet map
 }
 \examples{
 \dontrun{
-leaflet(plot_data) |>
-  addTiles() |>
-  add_plots(plot_data = my_plots, color = "green", size = 4)
+library(leaflet)
+map <- leaflet() |> addTiles()
+
+# Default popup fields
+map |> add_plots(plot_data)
+
+# Custom subset, adding a Notes column
+map |> add_plots(plot_data,
+                 popup_fields = c("Country", "Site", "PI",
+                                  "Dataset", "PlotID", "Notes"))
 }
 
 }
